@@ -212,9 +212,15 @@ function currentValidToken(): string | null {
  * Google may show the consent/account-picker popup (allowed on an explicit
  * user action). Non-interactive calls attempt a silent refresh only.
  */
-async function requestToken(scope: string, interactive: boolean): Promise<string> {
-  const existing = validScopeToken(scope)
-  if (existing) return existing
+async function requestToken(
+  scope: string,
+  interactive: boolean,
+  force = false,
+): Promise<string> {
+  if (!force) {
+    const existing = validScopeToken(scope)
+    if (existing) return existing
+  }
 
   const clientId = getClientId()
   if (!clientId) throw new Error('No Google Client ID configured')
@@ -282,7 +288,42 @@ export function isSendAuthorized(): boolean {
 /** Trigger the interactive Google sign-in / consent flow. */
 export async function connect(): Promise<void> {
   await getAccessToken(true)
+  startKeepAlive()
 }
+
+/**
+ * Keep-alive: silently refresh the read-only token shortly before it expires,
+ * and whenever the tab regains focus / the network returns — so an open
+ * dashboard stays connected without a reconnect click (as long as the browser
+ * permits silent auth). Idempotent; safe to call repeatedly.
+ */
+let keepAliveStarted = false
+function startKeepAlive(): void {
+  if (keepAliveStarted) return
+  if (typeof document === 'undefined' || typeof window === 'undefined') return
+  keepAliveStarted = true
+
+  const tick = () => {
+    if (isMockMode()) return
+    const t = tokens[GMAIL_SCOPE]
+    // Only refresh once the user has connected at least once.
+    if (!t) return
+    if (t.expiresAt - Date.now() < 5 * 60_000) {
+      // Force a silent refresh (bypass the still-valid cache); failures are
+      // non-fatal (widgets retry / offer reconnect).
+      requestToken(GMAIL_SCOPE, false, true).catch(() => {})
+    }
+  }
+
+  window.setInterval(tick, 60_000)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') tick()
+  })
+  window.addEventListener('online', tick)
+}
+
+// Begin keep-alive as soon as the module loads (no-op until connected).
+startKeepAlive()
 
 /** Ask for the gmail.send scope (interactive consent the first time). */
 export async function authorizeSend(): Promise<void> {

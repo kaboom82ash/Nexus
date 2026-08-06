@@ -157,8 +157,10 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [needsConnect, setNeedsConnect] = useState(false)
+  const [stale, setStale] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const mounted = useRef(true)
+  const hasData = useRef(false)
   const mock = isMockMode()
 
   const load = useCallback(
@@ -174,11 +176,15 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
         })
         if (!mounted.current) return
         setEmails(res.emails)
+        hasData.current = true
         setNeedsConnect(false)
+        setStale(false)
       } catch (err) {
         if (!mounted.current) return
         if (err instanceof NeedsConnectError || (!interactive && !isConnected())) {
-          setNeedsConnect(true)
+          // Keep showing the list on a transient silent-auth hiccup.
+          if (hasData.current) setStale(true)
+          else setNeedsConnect(true)
         } else {
           setError(err instanceof Error ? err.message : 'Failed to load')
         }
@@ -275,6 +281,11 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
         {mock && <span className="badge badge--mock">sample data</span>}
         {config.search && <span className="badge" title={config.search}>filtered</span>}
         {note && <span className="badge badge--note">{note}</span>}
+        {stale && (
+          <button className="badge badge--warn" onClick={onConnect}>
+            reconnect
+          </button>
+        )}
         {loading && <span className="badge">refreshing…</span>}
       </div>
     </div>

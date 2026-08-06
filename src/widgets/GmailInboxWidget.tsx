@@ -31,7 +31,9 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [needsConnect, setNeedsConnect] = useState(false)
+  const [stale, setStale] = useState(false)
   const mounted = useRef(true)
+  const hasData = useRef(false)
   const mock = isMockMode()
 
   const load = useCallback(
@@ -45,11 +47,16 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
         })
         if (!mounted.current) return
         setStats(next)
+        hasData.current = true
         setNeedsConnect(false)
+        setStale(false)
       } catch (err) {
         if (!mounted.current) return
         if (err instanceof NeedsConnectError || (!interactive && !isConnected())) {
-          setNeedsConnect(true)
+          // Don't blank a tile that already has data on a transient silent-auth
+          // hiccup — keep showing it and offer a manual reconnect.
+          if (hasData.current) setStale(true)
+          else setNeedsConnect(true)
         } else {
           setError(err instanceof Error ? err.message : 'Failed to load')
         }
@@ -125,6 +132,11 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
 
       <div className="widget__foot">
         {mock && <span className="badge badge--mock">sample data</span>}
+        {stale && (
+          <button className="badge badge--warn" onClick={onConnect}>
+            reconnect
+          </button>
+        )}
         {loading && <span className="badge">refreshing…</span>}
       </div>
     </div>
