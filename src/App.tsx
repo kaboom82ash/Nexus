@@ -12,6 +12,7 @@ import { getWidget } from './widgets/registry'
 import { TabBar } from './components/TabBar'
 import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
+import { GmailAuthBar } from './components/GmailAuthBar'
 
 export default function App() {
   const [state, setState] = useState<DashboardState>(() => loadState())
@@ -159,6 +160,7 @@ export default function App() {
           onRename={renameTab}
         />
         <div className="app__meta">
+          <GmailAuthBar />
           <span className="app__count">
             {filledCount}/{activeTab.tiles.length} tiles
           </span>

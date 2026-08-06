@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type DragEvent } from 'react'
 import type { TileCustom, WidgetInstance } from '../lib/types'
 import { getWidget } from '../widgets/registry'
 import { TileCustomizeModal } from './TileCustomizeModal'
+import { TileActionsContext, type TileAction } from './TileActions'
 
 interface TileProps {
   index: number
@@ -25,8 +26,8 @@ export function Tile({
 }: TileProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [actions, setActions] = useState<TileAction[]>([])
 
-  // Drop handling is shared by empty and filled tiles.
   const dropProps = {
     onDragOver: (e: DragEvent) => {
       if (e.dataTransfer.types.includes('text/plain')) {
@@ -85,7 +86,12 @@ export function Tile({
       {...dropProps}
       style={accent ? ({ '--tile-accent': accent } as CSSProperties) : undefined}
     >
-      {accent && <span className="tile__accent" />}
+      {/* Top bar: accent color + drag handle */}
+      <div className={`tile__topbar ${accent ? 'tile__topbar--accent' : ''}`}>
+        <span className="tile__handle" title="Drag to move" aria-hidden>
+          ⠿
+        </span>
+      </div>
 
       <button
         className="tile__remove"
@@ -96,22 +102,31 @@ export function Tile({
       </button>
 
       <div className="tile__content">
-        <Body
-          config={config}
-          title={title}
-          onConfigChange={(next) =>
-            onUpdate(index, { config: next as Record<string, unknown> })
-          }
-        />
+        <TileActionsContext.Provider value={setActions}>
+          <Body
+            config={config}
+            title={title}
+            onConfigChange={(next) =>
+              onUpdate(index, { config: next as Record<string, unknown> })
+            }
+          />
+        </TileActionsContext.Provider>
       </div>
 
-      {/* Bottom control bar: drag handle + gear */}
+      {/* Bottom bar: widget actions (refresh/reconnect) + gear */}
       <div className="tile__bar">
-        <span className="tile__handle" title="Drag to move" aria-hidden>
-          ⠿
-        </span>
+        {actions.map((a) => (
+          <button
+            key={a.key}
+            className="tile__barbtn"
+            title={a.title}
+            onClick={a.onClick}
+          >
+            {a.icon}
+          </button>
+        ))}
         <button
-          className="tile__gear"
+          className="tile__barbtn tile__barbtn--gear"
           title="Customize tile"
           onClick={() => setShowSettings(true)}
         >

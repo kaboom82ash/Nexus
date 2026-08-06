@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { defineWidget, type WidgetProps, type WidgetSettingsProps } from './types'
+import { useTileActions } from '../components/TileActions'
 import {
-  fetchTopEmails,
+  fetchInboxCounts,
+  fetchEmailPage,
   sendGmailMessage,
   authorizeSend,
   isSendAuthorized,
@@ -13,30 +15,27 @@ import {
   setClientId,
   NeedsConnectError,
   type EmailSummary,
+  type InboxCounts,
+  type MailFilter,
 } from '../lib/gmail'
 
 interface TopEmailsConfig {
   lookbackHours: number
-  limit: number
   refreshSeconds: number
-  /** Extra Gmail search criteria, e.g. "is:starred OR from:boss@x.com". */
+  pageSize: number
   search: string
-  /** Evernote email-in address (…@m.evernote.com) for the "to Evernote" shortcut. */
   evernoteEmail: string
-  /** Evernote notebook the shortcut files into. */
   evernoteNotebook: string
-  /** Tag added to the filed note. */
   evernoteTag: string
-  /** Send directly via Gmail (one click) instead of opening the mail client. */
   evernoteDirectSend: boolean
 }
 
 const DEFAULT_CONFIG: TopEmailsConfig = {
   lookbackHours: 24,
-  limit: 10,
   refreshSeconds: 300,
+  pageSize: 15,
   search: '',
-  evernoteEmail: '',
+  evernoteEmail: 'ashishkohli.62760@m.evernote.com',
   evernoteNotebook: 'Planning',
   evernoteTag: 'task',
   evernoteDirectSend: true,
@@ -51,7 +50,10 @@ function relativeTime(iso: string): string {
   return `${Math.round(h / 24)}d`
 }
 
-// Evernote email-in: "@Notebook" routes, "#tag" tags, trailing "!" adds a reminder.
+const byPriority = (a: EmailSummary, b: EmailSummary) =>
+  b.score - a.score || b.date.localeCompare(a.date)
+
+// ---- Evernote email-in helpers (@Notebook routes, #tag tags, ! reminder) ----
 function evernoteSubject(email: EmailSummary, cfg: TopEmailsConfig): string {
   return `${email.subject} @${cfg.evernoteNotebook} #${cfg.evernoteTag} !`
 }
@@ -71,8 +73,6 @@ function evernoteMailto(email: EmailSummary, cfg: TopEmailsConfig): string {
     evernoteSubject(email, cfg),
   )}&body=${encodeURIComponent(evernoteBody(email, cfg))}`
 }
-
-/** Open the user's mail client (fallback when direct Gmail send fails). */
 function openMailto(href: string): void {
   const a = document.createElement('a')
   a.href = href
@@ -100,7 +100,6 @@ function EmailRow({
   const mainProps = email.url
     ? { href: email.url, target: '_blank', rel: 'noreferrer', draggable: false }
     : {}
-
   const direct = !!cfg.evernoteEmail && cfg.evernoteDirectSend && !isMockMode()
   const glyph =
     send === 'sending'
@@ -172,67 +171,136 @@ function EmailRow({
 }
 
 function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
+  const [filter, setFilter] = useState<MailFilter>('all')
   const [emails, setEmails] = useState<EmailSummary[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [nextToken, setNextToken] = useState<string | undefined>(undefined)
+  const [counts, setCounts] = useState<InboxCounts | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [needsConnect, setNeedsConnect] = useState(false)
   const [stale, setStale] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const mounted = useRef(true)
   const hasData = useRef(false)
+  const listRef = useRef<HTMLDivElement>(null)
   const mock = isMockMode()
 
-  const load = useCallback(
+  const handleErr = (err: unknown, interactive: boolean) => {
+    if (err instanceof NeedsConnectError || (!interactive && !isConnected())) {
+      if (hasData.current) setStale(true)
+      else setNeedsConnect(true)
+    } else {
+      setError(err instanceof Error ? err.message : 'Failed to load')
+    }
+  }
+
+  const loadFirst = useCallback(
     async (interactive: boolean) => {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetchTopEmails({
-          lookbackHours: config.lookbackHours,
-          limit: config.limit,
-          search: config.search,
-          interactive,
-        })
+        const [countRes, pageRes] = await Promise.all([
+          fetchInboxCounts({
+            lookbackHours: config.lookbackHours,
+            search: config.search,
+            interactive,
+          }),
+          fetchEmailPage({
+            lookbackHours: config.lookbackHours,
+            search: config.search,
+            filter,
+            pageSize: config.pageSize,
+            interactive,
+          }),
+        ])
         if (!mounted.current) return
-        setEmails(res.emails)
+        setCounts(countRes)
+        setEmails([...pageRes.emails].sort(byPriority))
+        setNextToken(pageRes.nextPageToken)
         hasData.current = true
         setNeedsConnect(false)
         setStale(false)
       } catch (err) {
-        if (!mounted.current) return
-        if (err instanceof NeedsConnectError || (!interactive && !isConnected())) {
-          // Keep showing the list on a transient silent-auth hiccup.
-          if (hasData.current) setStale(true)
-          else setNeedsConnect(true)
-        } else {
-          setError(err instanceof Error ? err.message : 'Failed to load')
-        }
+        if (mounted.current) handleErr(err, interactive)
       } finally {
         if (mounted.current) setLoading(false)
       }
     },
-    [config.lookbackHours, config.limit, config.search],
+    [config.lookbackHours, config.search, config.pageSize, filter],
   )
 
+  const loadMore = useCallback(async () => {
+    if (!nextToken || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const res = await fetchEmailPage({
+        lookbackHours: config.lookbackHours,
+        search: config.search,
+        filter,
+        pageToken: nextToken,
+        pageSize: config.pageSize,
+      })
+      if (!mounted.current) return
+      setEmails((prev) => {
+        const seen = new Set(prev.map((e) => e.id))
+        const merged = [...prev, ...res.emails.filter((e) => !seen.has(e.id))]
+        return merged.sort(byPriority)
+      })
+      setNextToken(res.nextPageToken)
+    } catch (err) {
+      if (mounted.current) handleErr(err, false)
+    } finally {
+      if (mounted.current) setLoadingMore(false)
+    }
+  }, [nextToken, loadingMore, config.lookbackHours, config.search, config.pageSize, filter])
+
+  // Initial load + refresh on interval + reload when filter changes.
   useEffect(() => {
     mounted.current = true
-    void load(false)
+    void loadFirst(false)
     const ms = Math.max(30, config.refreshSeconds) * 1000
-    const timer = setInterval(() => void load(false), ms)
+    const timer = setInterval(() => void loadFirst(false), ms)
     return () => {
       mounted.current = false
       clearInterval(timer)
     }
-  }, [load, config.refreshSeconds])
+  }, [loadFirst, config.refreshSeconds])
 
-  const onConnect = async () => {
+  const onConnect = useCallback(async () => {
     try {
       await connect()
-      await load(true)
+      await loadFirst(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
       setNeedsConnect(false)
     }
+  }, [loadFirst])
+
+  // Refresh when a token becomes available (e.g. header login).
+  useEffect(() => {
+    const h = () => void loadFirst(false)
+    window.addEventListener('nexus:gmail-token', h)
+    return () => window.removeEventListener('nexus:gmail-token', h)
+  }, [loadFirst])
+
+  // Bottom-bar controls.
+  const barActions = useMemo(
+    () =>
+      mock
+        ? [{ key: 'refresh', icon: '↻', title: 'Refresh now', onClick: () => void loadFirst(false) }]
+        : [
+            { key: 'refresh', icon: '↻', title: 'Refresh now', onClick: () => void loadFirst(false) },
+            { key: 'reconnect', icon: '⟲', title: 'Reconnect Gmail', onClick: () => void onConnect() },
+          ],
+    [mock, loadFirst, onConnect],
+  )
+  useTileActions(barActions, [barActions])
+
+  const onScroll = () => {
+    const el = listRef.current
+    if (!el) return
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) void loadMore()
   }
 
   const sendToEvernote = async (email: EmailSummary): Promise<'sent' | 'opened'> => {
@@ -241,15 +309,12 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
         to: config.evernoteEmail,
         subject: evernoteSubject(email, config),
         body: evernoteBody(email, config),
-        // First send triggers the gmail.send consent popup.
         interactive: !isSendAuthorized(),
       })
       setNote(`Sent to Evernote → ${config.evernoteNotebook}`)
       setTimeout(() => mounted.current && setNote(null), 2500)
       return 'sent'
     } catch (err) {
-      // Direct send failed (usually the gmail.send scope isn't granted) — fall
-      // back to opening the mail client so the email still reaches Evernote.
       const msg = err instanceof Error ? err.message : 'send failed'
       openMailto(evernoteMailto(email, config))
       setNote(`Gmail send unavailable (${msg}). Opened mail app instead.`)
@@ -258,6 +323,12 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
     }
   }
 
+  const filters: { key: MailFilter; label: string; count: number | undefined }[] = [
+    { key: 'all', label: 'All', count: counts?.total },
+    { key: 'unread', label: 'Unread', count: counts?.unread },
+    { key: 'read', label: 'Read', count: counts?.read },
+  ]
+
   return (
     <div className="widget topemails-widget">
       <div className="widget__head">
@@ -265,24 +336,6 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
           🏆
         </span>
         <span className="widget__title">{title}</span>
-        <span className="widget__actions">
-          <button
-            className="widget__inline-btn"
-            title="Refresh now"
-            onClick={() => void load(false)}
-          >
-            ↻
-          </button>
-          {!mock && (
-            <button
-              className="widget__inline-btn"
-              title="Reconnect Gmail"
-              onClick={() => void onConnect()}
-            >
-              ⟲
-            </button>
-          )}
-        </span>
       </div>
 
       {needsConnect ? (
@@ -295,28 +348,56 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
       ) : error ? (
         <div className="widget__body widget__center">
           <p className="widget__error">{error}</p>
-          <button className="btn" onClick={() => void load(true)}>
+          <button className="btn" onClick={() => void loadFirst(true)}>
             Retry
           </button>
         </div>
       ) : (
-        <div className="widget__body widget__body--list">
-          {emails.length === 0 && !loading ? (
-            <p className="widget__hint">No emails match in the last {config.lookbackHours}h.</p>
-          ) : (
-            <ol className="maillist">
-              {emails.map((e, i) => (
-                <EmailRow
-                  key={e.id}
-                  email={e}
-                  rank={i + 1}
-                  cfg={config}
-                  onSend={sendToEvernote}
-                />
-              ))}
-            </ol>
-          )}
-        </div>
+        <>
+          <div className="mailcounts">
+            {filters.map((f) => (
+              <button
+                key={f.key}
+                className={`mailcounts__btn ${filter === f.key ? 'is-active' : ''}`}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+                <span className="mailcounts__n">{f.count ?? '—'}</span>
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="widget__body widget__body--list"
+            ref={listRef}
+            onScroll={onScroll}
+          >
+            {emails.length === 0 && !loading ? (
+              <p className="widget__hint">Nothing here in the last {config.lookbackHours}h.</p>
+            ) : (
+              <ol className="maillist">
+                {emails.map((e, i) => (
+                  <EmailRow
+                    key={e.id}
+                    email={e}
+                    rank={i + 1}
+                    cfg={config}
+                    onSend={sendToEvernote}
+                  />
+                ))}
+              </ol>
+            )}
+            {nextToken && (
+              <button
+                className="maillist__more"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+          </div>
+        </>
       )}
 
       <div className="widget__foot">
@@ -364,14 +445,14 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
           />
         </label>
         <label className="field">
-          <span>How many</span>
+          <span>Page size</span>
           <input
             type="number"
-            min={1}
-            max={25}
-            value={config.limit}
+            min={5}
+            max={50}
+            value={config.pageSize}
             onChange={(e) =>
-              set({ limit: Math.min(25, Math.max(1, Number(e.target.value))) })
+              set({ pageSize: Math.min(50, Math.max(5, Number(e.target.value))) })
             }
           />
         </label>
@@ -390,14 +471,15 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
         <span>Search criteria (Gmail query, optional)</span>
         <input
           type="text"
-          placeholder="e.g. is:starred OR from:boss@co.com  ·  label:work  ·  -category:promotions"
+          placeholder="e.g. is:starred OR from:boss@co.com  ·  label:work"
           value={config.search}
           onChange={(e) => set({ search: e.target.value })}
         />
       </label>
       <p className="settings__hint">
-        ANDed with <code>in:inbox newer_than:{config.lookbackHours}h</code>. Uses
-        Gmail search operators (from:, is:, label:, subject:, OR, -exclude…).
+        ANDed with <code>in:inbox newer_than:{config.lookbackHours}h</code>. The
+        list is priority-ranked; scroll to load more. Counts at top show
+        total / unread / read for the current window.
       </p>
 
       <div className="settings__divider" />
@@ -437,7 +519,6 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
         />
         <span>One-click send via Gmail (no mail app)</span>
       </label>
-
       {config.evernoteDirectSend && config.evernoteEmail && !isMockMode() && (
         <p className="settings__hint">
           {sendAuth ? (
@@ -447,24 +528,12 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
               <button className="btn btn--sm" onClick={authorize}>
                 Authorize one-click send
               </button>{' '}
-              — grants the <code>gmail.send</code> permission once so the ⤳
-              button sends silently.
+              — grants the <code>gmail.send</code> permission once.
             </>
           )}
           {authError && <span className="widget__error"> {authError}</span>}
         </p>
       )}
-
-      <p className="settings__hint">
-        The <strong>⤳</strong> button files each email to Evernote in the{' '}
-        <strong>{config.evernoteNotebook || 'Planning'}</strong> notebook as a
-        task (checkbox + reminder). One-click sends it directly through your
-        Gmail; if the <code>gmail.send</code> permission isn’t granted it falls
-        back to opening your mail app. To enable true one-click, add the{' '}
-        <code>gmail.send</code> scope to your OAuth consent screen, then click{' '}
-        <strong>Authorize one-click send</strong> above. Find your Evernote
-        address in Evernote → Settings → Email &amp; Calendar.
-      </p>
 
       <div className="settings__divider" />
 
@@ -481,8 +550,7 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
         />
       </label>
       <p className="settings__hint">
-        Leave blank for sample data. After saving a Client ID, close this and
-        click <strong>Connect Gmail</strong> on the tile once to grant access.{' '}
+        Leave blank for sample data.{' '}
         {connected ? (
           <button className="btn btn--sm" onClick={() => disconnect()}>
             Disconnect
@@ -496,7 +564,7 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
 export const topEmailsWidget = defineWidget<TopEmailsConfig>({
   type: 'top-emails',
   name: 'Top Priority Emails',
-  description: 'Ranks your most important inbox emails from the last 24h by priority.',
+  description: 'Priority-ranked inbox with counts, unread/read filters, and infinite scroll.',
   icon: '🏆',
   defaultConfig: DEFAULT_CONFIG,
   component: TopEmailsBody,

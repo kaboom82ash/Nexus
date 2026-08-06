@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { defineWidget, type WidgetProps, type WidgetSettingsProps } from './types'
+import { useTileActions } from '../components/TileActions'
 import {
   fetchInboxStats,
   isMockMode,
@@ -78,7 +79,7 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
     }
   }, [load, config.refreshSeconds])
 
-  const onConnect = async () => {
+  const onConnect = useCallback(async () => {
     try {
       await connect()
       await load(true)
@@ -86,7 +87,27 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
       setError(err instanceof Error ? err.message : 'Connect failed')
       setNeedsConnect(false)
     }
-  }
+  }, [load])
+
+  // Refresh immediately when a token becomes available (e.g. header login).
+  useEffect(() => {
+    const h = () => void load(false)
+    window.addEventListener('nexus:gmail-token', h)
+    return () => window.removeEventListener('nexus:gmail-token', h)
+  }, [load])
+
+  // Contribute refresh / reconnect controls to the tile's bottom bar.
+  const barActions = useMemo(
+    () =>
+      mock
+        ? [{ key: 'refresh', icon: '↻', title: 'Refresh now', onClick: () => void load(false) }]
+        : [
+            { key: 'refresh', icon: '↻', title: 'Refresh now', onClick: () => void load(false) },
+            { key: 'reconnect', icon: '⟲', title: 'Reconnect Gmail', onClick: () => void onConnect() },
+          ],
+    [mock, load, onConnect],
+  )
+  useTileActions(barActions, [barActions])
 
   return (
     <div className="widget gmail-widget">
@@ -95,24 +116,6 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
           ✉️
         </span>
         <span className="widget__title">{title}</span>
-        <span className="widget__actions">
-          <button
-            className="widget__inline-btn"
-            title="Refresh now"
-            onClick={() => void load(false)}
-          >
-            ↻
-          </button>
-          {!mock && (
-            <button
-              className="widget__inline-btn"
-              title="Reconnect Gmail"
-              onClick={() => void onConnect()}
-            >
-              ⟲
-            </button>
-          )}
-        </span>
       </div>
 
       {needsConnect ? (

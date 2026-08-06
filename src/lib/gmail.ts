@@ -212,6 +212,10 @@ function currentValidToken(): string | null {
  * Google may show the consent/account-picker popup (allowed on an explicit
  * user action). Non-interactive calls attempt a silent refresh only.
  */
+// De-dupe concurrent token requests per scope so a burst of calls (e.g. counts
+// + email page at once) can't open two consent popups or fire two grants.
+const inflight: Record<string, Promise<string> | undefined> = {}
+
 async function requestToken(
   scope: string,
   interactive: boolean,
@@ -220,8 +224,20 @@ async function requestToken(
   if (!force) {
     const existing = validScopeToken(scope)
     if (existing) return existing
+    const pending = inflight[scope]
+    if (pending) return pending
   }
+  const p = acquireToken(scope, interactive)
+  if (!force) {
+    inflight[scope] = p
+    void p.finally(() => {
+      if (inflight[scope] === p) inflight[scope] = undefined
+    })
+  }
+  return p
+}
 
+async function acquireToken(scope: string, interactive: boolean): Promise<string> {
   const clientId = getClientId()
   if (!clientId) throw new Error('No Google Client ID configured')
 
@@ -246,6 +262,11 @@ async function requestToken(
         const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
         setScopeToken(scope, { token, expiresAt: Date.now() + ttl })
+        // Let all Gmail widgets know a read-only token is now available so they
+        // can refresh immediately (e.g. after a header "Log in to Gmail").
+        if (scope === GMAIL_SCOPE && typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('nexus:gmail-token'))
+        }
         finish(() => resolve(token))
       },
       error_callback: (err) => {
@@ -744,6 +765,154 @@ export async function fetchTopEmails(
     .sort((a, b) => b.score - a.score || b.date.localeCompare(a.date))
     .slice(0, limit)
   return { emails, mock: false }
+}
+
+// ---------------------------------------------------------------------------
+// Landing auto-connect
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt a silent connect on page load. Returns true if a token is available
+ * (already valid or silently obtained), false if interactive login is needed.
+ */
+export async function ensureConnected(): Promise<boolean> {
+  if (isMockMode()) return false
+  if (isConnected()) return true
+  try {
+    await getAccessToken(false)
+    startKeepAlive()
+    return true
+  } catch {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Counts (total / unread / read)
+// ---------------------------------------------------------------------------
+
+async function countEstimate(token: string, query: string): Promise<number> {
+  const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
+  url.searchParams.set('q', query)
+  url.searchParams.set('maxResults', '1')
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 401) {
+    setCachedToken(null)
+    throw new Error('Gmail session expired — reconnect required')
+  }
+  if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
+  const data = (await res.json()) as MessagesListResponse
+  return data.resultSizeEstimate ?? 0
+}
+
+export interface InboxCounts {
+  total: number
+  unread: number
+  read: number
+  mock: boolean
+}
+
+export interface CountsOptions {
+  lookbackHours: number
+  search?: string
+  interactive?: boolean
+}
+
+export async function fetchInboxCounts(opts: CountsOptions): Promise<InboxCounts> {
+  const { lookbackHours, search, interactive = false } = opts
+  if (isMockMode()) {
+    const m = mockTopEmails()
+    const unread = m.filter((e) => e.unread).length
+    return { total: m.length, unread, read: m.length - unread, mock: true }
+  }
+  const token = await getAccessToken(interactive)
+  const base = `${lookbackQuery(lookbackHours)}${
+    search?.trim() ? ` ${search.trim()}` : ''
+  }`
+  const [total, unread] = await Promise.all([
+    countEstimate(token, base),
+    countEstimate(token, `${base} is:unread`),
+  ])
+  return { total, unread, read: Math.max(0, total - unread), mock: false }
+}
+
+// ---------------------------------------------------------------------------
+// Paged + filtered email fetch (for infinite scroll)
+// ---------------------------------------------------------------------------
+
+export type MailFilter = 'all' | 'unread' | 'read'
+
+function filterFragment(f: MailFilter): string {
+  return f === 'unread' ? ' is:unread' : f === 'read' ? ' is:read' : ''
+}
+
+async function listPage(
+  token: string,
+  query: string,
+  pageToken: string | undefined,
+  pageSize: number,
+): Promise<{ ids: string[]; nextPageToken?: string }> {
+  const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
+  url.searchParams.set('q', query)
+  url.searchParams.set('maxResults', String(pageSize))
+  if (pageToken) url.searchParams.set('pageToken', pageToken)
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 401) {
+    setCachedToken(null)
+    throw new Error('Gmail session expired — reconnect required')
+  }
+  if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
+  const data = (await res.json()) as MessagesListResponse
+  return {
+    ids: (data.messages ?? []).map((m) => m.id),
+    nextPageToken: data.nextPageToken,
+  }
+}
+
+export interface EmailPageOptions {
+  lookbackHours: number
+  search?: string
+  filter: MailFilter
+  pageToken?: string
+  pageSize?: number
+  interactive?: boolean
+}
+
+export interface EmailPageResult {
+  emails: EmailSummary[]
+  nextPageToken?: string
+  mock: boolean
+}
+
+export async function fetchEmailPage(
+  opts: EmailPageOptions,
+): Promise<EmailPageResult> {
+  const {
+    lookbackHours,
+    search,
+    filter,
+    pageToken,
+    pageSize = 15,
+    interactive = false,
+  } = opts
+  if (isMockMode()) {
+    let emails = mockTopEmails()
+    if (filter === 'unread') emails = emails.filter((e) => e.unread)
+    else if (filter === 'read') emails = emails.filter((e) => !e.unread)
+    return { emails, nextPageToken: undefined, mock: true }
+  }
+  const token = await getAccessToken(interactive)
+  const q = `${lookbackQuery(lookbackHours)}${
+    search?.trim() ? ` ${search.trim()}` : ''
+  }${filterFragment(filter)}`
+  const { ids, nextPageToken } = await listPage(token, q, pageToken, pageSize)
+  const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
+  const emails = metas.map(metaToSummary)
+  return { emails, nextPageToken, mock: false }
 }
 
 // Generic, fictional sample data (no real account content).
