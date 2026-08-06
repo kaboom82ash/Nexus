@@ -8,13 +8,12 @@ import {
   disconnect,
   getClientId,
   setClientId,
+  NeedsConnectError,
   type InboxStats,
 } from '../lib/gmail'
 
 interface GmailConfig {
-  /** Window to look back over, in hours. */
   lookbackHours: number
-  /** Auto-refresh cadence, in seconds. */
   refreshSeconds: number
 }
 
@@ -27,13 +26,12 @@ function windowLabel(hours: number): string {
   return `last ${hours} hours`
 }
 
-function GmailInboxBody({ config, onOpenSettings }: WidgetProps<GmailConfig>) {
+function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
   const [stats, setStats] = useState<InboxStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [needsConnect, setNeedsConnect] = useState(false)
   const mounted = useRef(true)
-
   const mock = isMockMode()
 
   const load = useCallback(
@@ -50,11 +48,11 @@ function GmailInboxBody({ config, onOpenSettings }: WidgetProps<GmailConfig>) {
         setNeedsConnect(false)
       } catch (err) {
         if (!mounted.current) return
-        const msg = err instanceof Error ? err.message : 'Failed to load'
-        // A non-interactive silent token request failing just means we need a
-        // click to connect — surface that as a friendly prompt, not an error.
-        if (!interactive && !isConnected()) setNeedsConnect(true)
-        else setError(msg)
+        if (err instanceof NeedsConnectError || (!interactive && !isConnected())) {
+          setNeedsConnect(true)
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to load')
+        }
       } finally {
         if (mounted.current) setLoading(false)
       }
@@ -62,7 +60,6 @@ function GmailInboxBody({ config, onOpenSettings }: WidgetProps<GmailConfig>) {
     [config.lookbackHours],
   )
 
-  // Initial load + auto-refresh.
   useEffect(() => {
     mounted.current = true
     void load(false)
@@ -80,6 +77,7 @@ function GmailInboxBody({ config, onOpenSettings }: WidgetProps<GmailConfig>) {
       await load(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
+      setNeedsConnect(false)
     }
   }
 
@@ -89,14 +87,7 @@ function GmailInboxBody({ config, onOpenSettings }: WidgetProps<GmailConfig>) {
         <span className="widget__icon" aria-hidden>
           ✉️
         </span>
-        <span className="widget__title">Gmail Inbox</span>
-        <button
-          className="widget__gear"
-          title="Widget settings"
-          onClick={onOpenSettings}
-        >
-          ⚙
-        </button>
+        <span className="widget__title">{title}</span>
       </div>
 
       {needsConnect ? (
@@ -140,36 +131,21 @@ function GmailInboxBody({ config, onOpenSettings }: WidgetProps<GmailConfig>) {
   )
 }
 
-function GmailInboxSettings({
-  config,
-  onSave,
-  onClose,
-}: WidgetSettingsProps<GmailConfig>) {
-  const [lookbackHours, setLookback] = useState(config.lookbackHours)
-  const [refreshSeconds, setRefresh] = useState(config.refreshSeconds)
+function GmailInboxSettings({ config, onChange }: WidgetSettingsProps<GmailConfig>) {
   const [clientId, setClientIdInput] = useState(getClientId())
   const connected = isConnected()
 
-  const save = () => {
-    setClientId(clientId)
-    onSave({
-      lookbackHours: Math.max(1, Math.round(lookbackHours)),
-      refreshSeconds: Math.max(30, Math.round(refreshSeconds)),
-    })
-    onClose()
-  }
-
   return (
-    <div className="settings">
-      <h3 className="settings__title">Gmail Inbox settings</h3>
-
+    <div className="settings-body">
       <label className="field">
         <span>Look back (hours)</span>
         <input
           type="number"
           min={1}
-          value={lookbackHours}
-          onChange={(e) => setLookback(Number(e.target.value))}
+          value={config.lookbackHours}
+          onChange={(e) =>
+            onChange({ ...config, lookbackHours: Math.max(1, Number(e.target.value)) })
+          }
         />
       </label>
 
@@ -178,46 +154,36 @@ function GmailInboxSettings({
         <input
           type="number"
           min={30}
-          value={refreshSeconds}
-          onChange={(e) => setRefresh(Number(e.target.value))}
+          value={config.refreshSeconds}
+          onChange={(e) =>
+            onChange({ ...config, refreshSeconds: Math.max(30, Number(e.target.value)) })
+          }
         />
       </label>
 
       <div className="settings__divider" />
 
       <label className="field">
-        <span>Google OAuth Client ID</span>
+        <span>Google OAuth Client ID (shared by all Gmail widgets)</span>
         <input
           type="text"
           placeholder="xxxx.apps.googleusercontent.com (blank = sample data)"
           value={clientId}
-          onChange={(e) => setClientIdInput(e.target.value)}
+          onChange={(e) => {
+            setClientIdInput(e.target.value)
+            setClientId(e.target.value) // applies globally on edit
+          }}
         />
       </label>
       <p className="settings__hint">
-        Leave blank to run with sample data. Add a Web OAuth Client ID (scope{' '}
-        <code>gmail.readonly</code>) with this site's origin in “Authorized
-        JavaScript origins” to show live numbers.{' '}
+        Leave blank for sample data. After saving a Client ID, close this and
+        click <strong>Connect Gmail</strong> on the tile once to grant access.{' '}
         {connected ? (
-          <button
-            className="btn btn--sm"
-            onClick={() => {
-              disconnect()
-            }}
-          >
+          <button className="btn btn--sm" onClick={() => disconnect()}>
             Disconnect
           </button>
         ) : null}
       </p>
-
-      <div className="settings__actions">
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button className="btn btn--primary" onClick={save}>
-          Save
-        </button>
-      </div>
     </div>
   )
 }

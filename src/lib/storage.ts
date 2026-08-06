@@ -1,4 +1,10 @@
-import { DashboardState, DashboardTab, TILES_PER_PAGE } from './types'
+import {
+  DashboardState,
+  DashboardTab,
+  TileExport,
+  WidgetInstance,
+  TILES_PER_PAGE,
+} from './types'
 import { makeId } from './id'
 
 const STORAGE_KEY = 'nexus.dashboard.v1'
@@ -44,5 +50,71 @@ export function saveState(state: DashboardState): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch {
     // storage full / unavailable — non-fatal for an in-session dashboard
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Import / export
+// ---------------------------------------------------------------------------
+
+interface DashboardExport {
+  nexusDashboard: 1
+  exportedAt: string
+  state: DashboardState
+}
+
+/** Serialize the whole dashboard to a JSON string for download. */
+export function exportDashboard(state: DashboardState, now: string): string {
+  const payload: DashboardExport = {
+    nexusDashboard: 1,
+    exportedAt: now,
+    state,
+  }
+  return JSON.stringify(payload, null, 2)
+}
+
+/** Parse a previously-exported dashboard JSON string. Throws on bad input. */
+export function importDashboard(json: string): DashboardState {
+  const parsed = JSON.parse(json) as Partial<DashboardExport> & Partial<DashboardState>
+  // Accept either the wrapped export or a bare state object.
+  const state = (parsed as DashboardExport).state ?? (parsed as DashboardState)
+  if (!state?.tabs?.length) throw new Error('Not a valid Nexus dashboard file')
+  const tabs = state.tabs.map(normalizeTab)
+  const activeTabId = tabs.some((t) => t.id === state.activeTabId)
+    ? state.activeTabId
+    : tabs[0].id
+  return { tabs, activeTabId }
+}
+
+/** Portable JSON for a single tile (widget type + its settings). */
+export function tileToExport(instance: WidgetInstance): TileExport {
+  return {
+    nexusTile: 1,
+    type: instance.type,
+    config: instance.config,
+    custom: instance.custom,
+  }
+}
+
+/**
+ * Build a fresh widget instance from a tile-export JSON string.
+ * `known(type)` returns true if the widget type is registered.
+ */
+export function tileFromExport(
+  json: string,
+  known: (type: string) => boolean,
+): WidgetInstance {
+  const parsed = JSON.parse(json) as Partial<TileExport>
+  if (!parsed.type || typeof parsed.type !== 'string') {
+    throw new Error('Missing widget "type"')
+  }
+  if (!known(parsed.type)) {
+    throw new Error(`Unknown widget type: ${parsed.type}`)
+  }
+  return {
+    id: makeId('w'),
+    type: parsed.type,
+    config: (parsed.config as Record<string, unknown>) ?? {},
+    custom: parsed.custom,
   }
 }

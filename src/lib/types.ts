@@ -1,3 +1,11 @@
+/** Per-tile presentation overrides, independent of the widget's own config. */
+export interface TileCustom {
+  /** Overrides the widget's default title. */
+  title?: string
+  /** Accent color (hex) shown as the tile's top strip. */
+  accent?: string
+}
+
 /** A configured instance of a widget placed on a tile. */
 export interface WidgetInstance {
   /** Unique id for this placed instance. */
@@ -6,6 +14,16 @@ export interface WidgetInstance {
   type: string
   /** Free-form per-instance configuration (validated by the widget itself). */
   config: Record<string, unknown>
+  /** Optional presentation overrides applied by the tile chrome. */
+  custom?: TileCustom
+}
+
+/** Portable representation of a single tile for import/export. */
+export interface TileExport {
+  nexusTile: 1
+  type: string
+  config: Record<string, unknown>
+  custom?: TileCustom
 }
 
 /** Grid is always a fixed length; empty slots are null. */

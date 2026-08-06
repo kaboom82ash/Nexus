@@ -1,18 +1,23 @@
-import type { DashboardTab } from '../lib/types'
+import type { DashboardTab, TileCustom } from '../lib/types'
 import { Tile } from './Tile'
 
 interface DashboardGridProps {
   tab: DashboardTab
   onAdd: (index: number) => void
   onRemove: (index: number) => void
-  onConfigChange: (index: number, config: Record<string, unknown>) => void
+  onUpdate: (
+    index: number,
+    patch: { config?: Record<string, unknown>; custom?: TileCustom },
+  ) => void
+  onMove: (from: number, to: number) => void
 }
 
 export function DashboardGrid({
   tab,
   onAdd,
   onRemove,
-  onConfigChange,
+  onUpdate,
+  onMove,
 }: DashboardGridProps) {
   return (
     <div className="grid">
@@ -23,7 +28,8 @@ export function DashboardGrid({
           instance={instance}
           onAdd={onAdd}
           onRemove={onRemove}
-          onConfigChange={onConfigChange}
+          onUpdate={onUpdate}
+          onMove={onMove}
         />
       ))}
     </div>

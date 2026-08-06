@@ -8,6 +8,7 @@ import {
   disconnect,
   getClientId,
   setClientId,
+  NeedsConnectError,
   type EmailSummary,
 } from '../lib/gmail'
 
@@ -53,7 +54,7 @@ function EmailRow({ email, rank }: { email: EmailSummary; rank: number }) {
   )
 }
 
-function TopEmailsBody({ config, onOpenSettings }: WidgetProps<TopEmailsConfig>) {
+function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
   const [emails, setEmails] = useState<EmailSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -76,9 +77,11 @@ function TopEmailsBody({ config, onOpenSettings }: WidgetProps<TopEmailsConfig>)
         setNeedsConnect(false)
       } catch (err) {
         if (!mounted.current) return
-        const msg = err instanceof Error ? err.message : 'Failed to load'
-        if (!interactive && !isConnected()) setNeedsConnect(true)
-        else setError(msg)
+        if (err instanceof NeedsConnectError || (!interactive && !isConnected())) {
+          setNeedsConnect(true)
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to load')
+        }
       } finally {
         if (mounted.current) setLoading(false)
       }
@@ -103,6 +106,7 @@ function TopEmailsBody({ config, onOpenSettings }: WidgetProps<TopEmailsConfig>)
       await load(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
+      setNeedsConnect(false)
     }
   }
 
@@ -112,10 +116,7 @@ function TopEmailsBody({ config, onOpenSettings }: WidgetProps<TopEmailsConfig>)
         <span className="widget__icon" aria-hidden>
           🏆
         </span>
-        <span className="widget__title">Top Priority Emails</span>
-        <button className="widget__gear" title="Widget settings" onClick={onOpenSettings}>
-          ⚙
-        </button>
+        <span className="widget__title">{title}</span>
       </div>
 
       {needsConnect ? (
@@ -154,34 +155,21 @@ function TopEmailsBody({ config, onOpenSettings }: WidgetProps<TopEmailsConfig>)
   )
 }
 
-function TopEmailsSettings({ config, onSave, onClose }: WidgetSettingsProps<TopEmailsConfig>) {
-  const [lookbackHours, setLookback] = useState(config.lookbackHours)
-  const [limit, setLimit] = useState(config.limit)
-  const [refreshSeconds, setRefresh] = useState(config.refreshSeconds)
+function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsConfig>) {
   const [clientId, setClientIdInput] = useState(getClientId())
   const connected = isConnected()
 
-  const save = () => {
-    setClientId(clientId)
-    onSave({
-      lookbackHours: Math.max(1, Math.round(lookbackHours)),
-      limit: Math.min(25, Math.max(1, Math.round(limit))),
-      refreshSeconds: Math.max(30, Math.round(refreshSeconds)),
-    })
-    onClose()
-  }
-
   return (
-    <div className="settings">
-      <h3 className="settings__title">Top Priority Emails settings</h3>
-
+    <div className="settings-body">
       <label className="field">
         <span>Look back (hours)</span>
         <input
           type="number"
           min={1}
-          value={lookbackHours}
-          onChange={(e) => setLookback(Number(e.target.value))}
+          value={config.lookbackHours}
+          onChange={(e) =>
+            onChange({ ...config, lookbackHours: Math.max(1, Number(e.target.value)) })
+          }
         />
       </label>
 
@@ -191,8 +179,13 @@ function TopEmailsSettings({ config, onSave, onClose }: WidgetSettingsProps<TopE
           type="number"
           min={1}
           max={25}
-          value={limit}
-          onChange={(e) => setLimit(Number(e.target.value))}
+          value={config.limit}
+          onChange={(e) =>
+            onChange({
+              ...config,
+              limit: Math.min(25, Math.max(1, Number(e.target.value))),
+            })
+          }
         />
       </label>
 
@@ -201,39 +194,36 @@ function TopEmailsSettings({ config, onSave, onClose }: WidgetSettingsProps<TopE
         <input
           type="number"
           min={30}
-          value={refreshSeconds}
-          onChange={(e) => setRefresh(Number(e.target.value))}
+          value={config.refreshSeconds}
+          onChange={(e) =>
+            onChange({ ...config, refreshSeconds: Math.max(30, Number(e.target.value)) })
+          }
         />
       </label>
 
       <div className="settings__divider" />
 
       <label className="field">
-        <span>Google OAuth Client ID</span>
+        <span>Google OAuth Client ID (shared by all Gmail widgets)</span>
         <input
           type="text"
           placeholder="xxxx.apps.googleusercontent.com (blank = sample data)"
           value={clientId}
-          onChange={(e) => setClientIdInput(e.target.value)}
+          onChange={(e) => {
+            setClientIdInput(e.target.value)
+            setClientId(e.target.value)
+          }}
         />
       </label>
       <p className="settings__hint">
-        Shared with the Gmail Inbox widget. Leave blank to run with sample data.{' '}
+        Leave blank for sample data. After saving a Client ID, close this and
+        click <strong>Connect Gmail</strong> on the tile once to grant access.{' '}
         {connected ? (
           <button className="btn btn--sm" onClick={() => disconnect()}>
             Disconnect
           </button>
         ) : null}
       </p>
-
-      <div className="settings__actions">
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button className="btn btn--primary" onClick={save}>
-          Save
-        </button>
-      </div>
     </div>
   )
 }

@@ -28,6 +28,25 @@ Shows **how many new emails** landed in your inbox over a time window (default
 4. Put the Client ID in `.env` as `VITE_GOOGLE_CLIENT_ID`, or paste it into the
    widget's ⚙ settings at runtime.
 
+## Widgets
+
+- **Gmail Inbox** — new emails in a time window + unread count.
+- **Top Priority Emails** — ranked top-N of your inbox by a transparent priority score.
+- **AI Prompt** — type a prompt in the tile's settings; the model's answer streams
+  live onto the tile. Runs in demo mode until you add an Anthropic API key
+  (stored only in your browser; sent directly to Anthropic).
+
+## Tile interactions
+
+- **Move**: drag any filled tile onto another tile to move/swap it.
+- **Customize** (⚙ on the tile's bottom bar): set a custom **title**, an **accent**
+  color, and the widget's own settings — all in one dialog.
+- **Export / import a single tile**: the Customize dialog can copy a tile
+  (widget type + settings) as JSON; the "Add a widget" picker has
+  *Import a tile from JSON…* to paste it back — anywhere.
+- **Export / import the whole dashboard**: the header **Export** / **Import**
+  buttons save and restore all tabs and tiles as a JSON file.
+
 ## Develop
 
 ```bash

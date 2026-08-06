@@ -74,6 +74,10 @@ interface TokenResponse {
   expires_in?: number
   error?: string
 }
+interface TokenError {
+  type?: string
+  message?: string
+}
 interface TokenClient {
   requestAccessToken: (opts?: { prompt?: string }) => void
   callback: (resp: TokenResponse) => void
@@ -85,9 +89,18 @@ interface GoogleGsi {
         client_id: string
         scope: string
         callback: (resp: TokenResponse) => void
+        error_callback?: (err: TokenError) => void
       }) => TokenClient
       revoke: (token: string, done?: () => void) => void
     }
+  }
+}
+
+/** Thrown when a silent token request fails because consent is needed. */
+export class NeedsConnectError extends Error {
+  constructor() {
+    super('Gmail not connected')
+    this.name = 'NeedsConnectError'
   }
 }
 declare global {
@@ -155,21 +168,53 @@ async function getAccessToken(interactive: boolean): Promise<string> {
 
   const google = await loadGis()
   return new Promise<string>((resolve, reject) => {
+    let settled = false
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      fn()
+    }
     const client = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: GMAIL_SCOPE,
       callback: (resp) => {
         if (resp.error || !resp.access_token) {
-          reject(new Error(resp.error || 'Authorization was cancelled'))
+          // A silent attempt without prior consent reports an error here or via
+          // error_callback — treat it as "needs interactive connect".
+          finish(() =>
+            reject(interactive ? new Error(resp.error || 'Authorization failed') : new NeedsConnectError()),
+          )
           return
         }
+        const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
-        cachedToken = { token: resp.access_token, expiresAt: Date.now() + ttl }
-        resolve(resp.access_token)
+        cachedToken = { token, expiresAt: Date.now() + ttl }
+        finish(() => resolve(token))
+      },
+      // Fired when the popup can't open, consent is required for prompt:'none',
+      // or the user dismisses the flow. Without this the promise would hang.
+      error_callback: (err) => {
+        finish(() =>
+          reject(
+            interactive
+              ? new Error(err?.message || err?.type || 'Authorization failed')
+              : new NeedsConnectError(),
+          ),
+        )
       },
     })
-    // '' asks for a silent grant; 'consent' forces the picker/consent screen.
-    client.requestAccessToken({ prompt: interactive ? '' : 'none' })
+    // Backstop: a silent request that never calls back must not hang the tile.
+    const timeoutMs = interactive ? 120_000 : 10_000
+    setTimeout(
+      () => finish(() => reject(interactive ? new Error('Authorization timed out') : new NeedsConnectError())),
+      timeoutMs,
+    )
+    try {
+      // '' asks for a silent grant; 'none' never prompts (used for background refresh).
+      client.requestAccessToken({ prompt: interactive ? '' : 'none' })
+    } catch (e) {
+      finish(() => reject(e instanceof Error ? e : new Error('Authorization failed')))
+    }
   })
 }
 
