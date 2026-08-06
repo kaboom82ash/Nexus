@@ -57,7 +57,7 @@ export function setClientId(id: string): void {
     // ignore storage errors
   }
   // A changed client id invalidates any cached token.
-  cachedToken = null
+  setCachedToken(null)
 }
 
 export function isMockMode(): boolean {
@@ -145,7 +145,33 @@ interface CachedToken {
   token: string
   expiresAt: number
 }
-let cachedToken: CachedToken | null = null
+
+const TOKEN_KEY = 'nexus.google.token'
+
+function loadPersistedToken(): CachedToken | null {
+  try {
+    const raw = localStorage.getItem(TOKEN_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as CachedToken
+    if (parsed?.token && typeof parsed.expiresAt === 'number') return parsed
+    return null
+  } catch {
+    return null
+  }
+}
+
+// Seed from storage so a reload reuses a still-valid token (no reconnect click).
+let cachedToken: CachedToken | null = loadPersistedToken()
+
+function setCachedToken(next: CachedToken | null): void {
+  cachedToken = next
+  try {
+    if (next) localStorage.setItem(TOKEN_KEY, JSON.stringify(next))
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    /* storage unavailable — in-memory token still works for this session */
+  }
+}
 
 function currentValidToken(): string | null {
   if (cachedToken && cachedToken.expiresAt - 60_000 > Date.now()) {
@@ -188,7 +214,7 @@ async function getAccessToken(interactive: boolean): Promise<string> {
         }
         const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
-        cachedToken = { token, expiresAt: Date.now() + ttl }
+        setCachedToken({ token, expiresAt: Date.now() + ttl })
         finish(() => resolve(token))
       },
       // Fired when the popup can't open, consent is required for prompt:'none',
@@ -229,7 +255,7 @@ export async function connect(): Promise<void> {
 
 export function disconnect(): void {
   const token = cachedToken?.token
-  cachedToken = null
+  setCachedToken(null)
   if (token && window.google?.accounts?.oauth2) {
     window.google.accounts.oauth2.revoke(token)
   }
@@ -264,7 +290,7 @@ async function countMessages(
       headers: { Authorization: `Bearer ${token}` },
     })
     if (res.status === 401) {
-      cachedToken = null
+      setCachedToken(null)
       throw new Error('Gmail session expired — reconnect required')
     }
     if (!res.ok) {
@@ -472,7 +498,7 @@ async function listMessageIds(
       headers: { Authorization: `Bearer ${token}` },
     })
     if (res.status === 401) {
-      cachedToken = null
+      setCachedToken(null)
       throw new Error('Gmail session expired — reconnect required')
     }
     if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
@@ -498,7 +524,7 @@ async function getMessageMeta(
     headers: { Authorization: `Bearer ${token}` },
   })
   if (res.status === 401) {
-    cachedToken = null
+    setCachedToken(null)
     throw new Error('Gmail session expired — reconnect required')
   }
   if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
