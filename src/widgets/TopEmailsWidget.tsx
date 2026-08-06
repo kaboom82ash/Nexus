@@ -28,6 +28,23 @@ interface TopEmailsConfig {
   evernoteNotebook: string
   evernoteTag: string
   evernoteDirectSend: boolean
+  /** Which automation to POST to (per tile). 'none' uses the email path. */
+  webhookProvider: WebhookProvider
+  /** Catch-Hook URL for the selected provider. */
+  webhookUrl: string
+}
+
+type WebhookProvider = 'none' | 'zapier' | 'make'
+
+const PROVIDER_LABEL: Record<WebhookProvider, string> = {
+  none: 'None',
+  zapier: 'Zapier',
+  make: 'Make.com',
+}
+const PROVIDER_PLACEHOLDER: Record<WebhookProvider, string> = {
+  none: '',
+  zapier: 'https://hooks.zapier.com/hooks/catch/…',
+  make: 'https://hook.us1.make.com/…  (or hook.eu1.make.com)',
 }
 
 const DEFAULT_CONFIG: TopEmailsConfig = {
@@ -39,6 +56,12 @@ const DEFAULT_CONFIG: TopEmailsConfig = {
   evernoteNotebook: 'Planning',
   evernoteTag: 'task',
   evernoteDirectSend: true,
+  webhookProvider: 'none',
+  webhookUrl: '',
+}
+
+function webhookActive(cfg: TopEmailsConfig): boolean {
+  return cfg.webhookProvider !== 'none' && !!cfg.webhookUrl.trim()
 }
 
 function relativeTime(iso: string): string {
@@ -82,6 +105,33 @@ function openMailto(href: string): void {
   a.remove()
 }
 
+/**
+ * POST the email to a Zapier / Make / IFTTT catch-hook. Sent as form-encoded
+ * (a CORS "simple request", so no preflight) so it works cross-origin from a
+ * static page. The automation then creates the Evernote note/task.
+ */
+async function postWebhook(
+  url: string,
+  email: EmailSummary,
+  cfg: TopEmailsConfig,
+): Promise<void> {
+  const body = new URLSearchParams({
+    subject: email.subject,
+    from: email.fromName,
+    fromEmail: email.fromEmail,
+    date: email.date,
+    gmailUrl: email.url,
+    notebook: cfg.evernoteNotebook,
+    tag: cfg.evernoteTag,
+    unread: String(email.unread),
+    important: String(email.important),
+    score: String(email.score),
+    reasons: email.reasons.join(', '),
+  })
+  // no-cors: fire-and-forget; the hook receives the data, response is opaque.
+  await fetch(url, { method: 'POST', mode: 'no-cors', body })
+}
+
 type SendState = 'idle' | 'sending' | 'sent' | 'opened' | 'error'
 
 function EmailRow({
@@ -100,7 +150,11 @@ function EmailRow({
   const mainProps = email.url
     ? { href: email.url, target: '_blank', rel: 'noreferrer', draggable: false }
     : {}
-  const direct = !!cfg.evernoteEmail && cfg.evernoteDirectSend && !isMockMode()
+  // Use the action button (not a mailto link) when a webhook is active, or when
+  // one-click Gmail send is on in live mode.
+  const direct =
+    webhookActive(cfg) ||
+    (!!cfg.evernoteEmail && cfg.evernoteDirectSend && !isMockMode())
   const glyph =
     send === 'sending'
       ? '…'
@@ -304,6 +358,20 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
   }
 
   const sendToEvernote = async (email: EmailSummary): Promise<'sent' | 'opened'> => {
+    // Preferred path: POST to the selected automation webhook (a real API call).
+    if (webhookActive(config)) {
+      const label = PROVIDER_LABEL[config.webhookProvider]
+      try {
+        await postWebhook(config.webhookUrl.trim(), email, config)
+        setNote(`Sent to ${label} → ${config.evernoteNotebook}`)
+        setTimeout(() => mounted.current && setNote(null), 2500)
+        return 'sent'
+      } catch (err) {
+        setNote(err instanceof Error ? `${label} failed: ${err.message}` : `${label} failed`)
+        setTimeout(() => mounted.current && setNote(null), 5000)
+        throw err
+      }
+    }
     try {
       await sendGmailMessage({
         to: config.evernoteEmail,
@@ -481,6 +549,42 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
         list is priority-ranked; scroll to load more. Counts at top show
         total / unread / read for the current window.
       </p>
+
+      <div className="settings__divider" />
+
+      <label className="field">
+        <span>Send via — pick this tile's automation</span>
+        <select
+          value={config.webhookProvider}
+          onChange={(e) => set({ webhookProvider: e.target.value as WebhookProvider })}
+        >
+          <option value="none">Email (Evernote email-in / Gmail)</option>
+          <option value="zapier">Zapier webhook</option>
+          <option value="make">Make.com webhook</option>
+        </select>
+      </label>
+      {config.webhookProvider !== 'none' && (
+        <>
+          <label className="field">
+            <span>{PROVIDER_LABEL[config.webhookProvider]} catch-hook URL</span>
+            <input
+              type="text"
+              placeholder={PROVIDER_PLACEHOLDER[config.webhookProvider]}
+              value={config.webhookUrl}
+              onChange={(e) => set({ webhookUrl: e.target.value })}
+            />
+          </label>
+          <p className="settings__hint">
+            The <strong>⤳</strong> button POSTs the email (subject, sender, Gmail
+            link, notebook, tag, score…) to this URL — your{' '}
+            {PROVIDER_LABEL[config.webhookProvider]} scenario then “Create Note”
+            in Evernote. Real API call, no backend.{' '}
+            {config.webhookProvider === 'zapier'
+              ? 'In Zapier: Trigger = “Webhooks by Zapier → Catch Hook”, Action = “Evernote → Create Note”.'
+              : 'In Make: add a “Custom webhook” trigger, then an “Evernote → Create a Note” module.'}
+          </p>
+        </>
+      )}
 
       <div className="settings__divider" />
 

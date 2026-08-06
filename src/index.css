@@ -766,6 +766,18 @@ a.mailrow__main--link:hover .mailrow__subject {
 .field input:focus {
   border-color: var(--accent);
 }
+.field select {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+}
+.field select:focus {
+  border-color: var(--accent);
+}
 .settings__divider {
   height: 1px;
   background: var(--border);
