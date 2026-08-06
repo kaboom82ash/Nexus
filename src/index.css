@@ -523,8 +523,14 @@ a.mailrow__main--link:hover .mailrow__subject {
 .mailrow__en--sent {
   color: #16a34a;
 }
+.mailrow__en--opened {
+  color: var(--accent-soft);
+}
 .mailrow__en--error {
   color: var(--danger);
+}
+.ok-text {
+  color: #16a34a;
 }
 .badge--note {
   color: #16a34a;

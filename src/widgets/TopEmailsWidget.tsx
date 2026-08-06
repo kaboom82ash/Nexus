@@ -3,6 +3,7 @@ import { defineWidget, type WidgetProps, type WidgetSettingsProps } from './type
 import {
   fetchTopEmails,
   sendGmailMessage,
+  authorizeSend,
   isSendAuthorized,
   isMockMode,
   isConnected,
@@ -71,7 +72,17 @@ function evernoteMailto(email: EmailSummary, cfg: TopEmailsConfig): string {
   )}&body=${encodeURIComponent(evernoteBody(email, cfg))}`
 }
 
-type SendState = 'idle' | 'sending' | 'sent' | 'error'
+/** Open the user's mail client (fallback when direct Gmail send fails). */
+function openMailto(href: string): void {
+  const a = document.createElement('a')
+  a.href = href
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+type SendState = 'idle' | 'sending' | 'sent' | 'opened' | 'error'
 
 function EmailRow({
   email,
@@ -82,7 +93,7 @@ function EmailRow({
   email: EmailSummary
   rank: number
   cfg: TopEmailsConfig
-  onSend: (email: EmailSummary) => Promise<void>
+  onSend: (email: EmailSummary) => Promise<'sent' | 'opened'>
 }) {
   const [send, setSend] = useState<SendState>('idle')
   const Main = email.url ? 'a' : 'div'
@@ -92,7 +103,15 @@ function EmailRow({
 
   const direct = !!cfg.evernoteEmail && cfg.evernoteDirectSend && !isMockMode()
   const glyph =
-    send === 'sending' ? '…' : send === 'sent' ? '✓' : send === 'error' ? '✗' : '⤳'
+    send === 'sending'
+      ? '…'
+      : send === 'sent'
+        ? '✓'
+        : send === 'opened'
+          ? '↗'
+          : send === 'error'
+            ? '✗'
+            : '⤳'
 
   const handleDirect = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -100,9 +119,9 @@ function EmailRow({
     if (send === 'sending') return
     setSend('sending')
     try {
-      await onSend(email)
-      setSend('sent')
-      setTimeout(() => setSend('idle'), 2000)
+      const outcome = await onSend(email)
+      setSend(outcome)
+      setTimeout(() => setSend('idle'), outcome === 'opened' ? 3000 : 2000)
     } catch {
       setSend('error')
       setTimeout(() => setSend('idle'), 3500)
@@ -216,7 +235,7 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
     }
   }
 
-  const sendToEvernote = async (email: EmailSummary) => {
+  const sendToEvernote = async (email: EmailSummary): Promise<'sent' | 'opened'> => {
     try {
       await sendGmailMessage({
         to: config.evernoteEmail,
@@ -227,10 +246,15 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
       })
       setNote(`Sent to Evernote → ${config.evernoteNotebook}`)
       setTimeout(() => mounted.current && setNote(null), 2500)
+      return 'sent'
     } catch (err) {
-      setNote(err instanceof Error ? err.message : 'Evernote send failed')
-      setTimeout(() => mounted.current && setNote(null), 4000)
-      throw err
+      // Direct send failed (usually the gmail.send scope isn't granted) — fall
+      // back to opening the mail client so the email still reaches Evernote.
+      const msg = err instanceof Error ? err.message : 'send failed'
+      openMailto(evernoteMailto(email, config))
+      setNote(`Gmail send unavailable (${msg}). Opened mail app instead.`)
+      setTimeout(() => mounted.current && setNote(null), 6000)
+      return 'opened'
     }
   }
 
@@ -294,8 +318,20 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
 
 function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsConfig>) {
   const [clientId, setClientIdInput] = useState(getClientId())
+  const [sendAuth, setSendAuth] = useState(isSendAuthorized())
+  const [authError, setAuthError] = useState<string | null>(null)
   const connected = isConnected()
   const set = (patch: Partial<TopEmailsConfig>) => onChange({ ...config, ...patch })
+
+  const authorize = async () => {
+    setAuthError(null)
+    try {
+      await authorizeSend()
+      setSendAuth(true)
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Authorization failed')
+    }
+  }
 
   return (
     <div className="settings-body">
@@ -383,14 +419,33 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
         />
         <span>One-click send via Gmail (no mail app)</span>
       </label>
+
+      {config.evernoteDirectSend && config.evernoteEmail && !isMockMode() && (
+        <p className="settings__hint">
+          {sendAuth ? (
+            <span className="ok-text">✓ One-click send authorized.</span>
+          ) : (
+            <>
+              <button className="btn btn--sm" onClick={authorize}>
+                Authorize one-click send
+              </button>{' '}
+              — grants the <code>gmail.send</code> permission once so the ⤳
+              button sends silently.
+            </>
+          )}
+          {authError && <span className="widget__error"> {authError}</span>}
+        </p>
+      )}
+
       <p className="settings__hint">
         The <strong>⤳</strong> button files each email to Evernote in the{' '}
         <strong>{config.evernoteNotebook || 'Planning'}</strong> notebook as a
-        task (checkbox + reminder). With one-click on, Nexus sends it directly
-        through your Gmail — the first time you'll approve the{' '}
-        <code>gmail.send</code> permission (add that scope to your OAuth consent
-        screen too). Off, it opens your mail app instead. Find your address in
-        Evernote → Settings → Email &amp; Calendar.
+        task (checkbox + reminder). One-click sends it directly through your
+        Gmail; if the <code>gmail.send</code> permission isn’t granted it falls
+        back to opening your mail app. To enable true one-click, add the{' '}
+        <code>gmail.send</code> scope to your OAuth consent screen, then click{' '}
+        <strong>Authorize one-click send</strong> above. Find your Evernote
+        address in Evernote → Settings → Email &amp; Calendar.
       </p>
 
       <div className="settings__divider" />
