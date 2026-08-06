@@ -508,9 +508,36 @@ a.mailrow__main--link:hover .mailrow__subject {
   font-size: 13px;
   line-height: 1;
 }
+.mailrow__en {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
 .mailrow__en:hover {
   color: #16a34a;
   background: rgba(22, 163, 74, 0.14);
+}
+.mailrow__en--sending {
+  color: var(--text-dim);
+}
+.mailrow__en--sent {
+  color: #16a34a;
+}
+.mailrow__en--error {
+  color: var(--danger);
+}
+.badge--note {
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.35);
+  background: rgba(22, 163, 74, 0.1);
+}
+.field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.field--check input {
+  width: auto;
 }
 
 /* ---------- Skills widget ---------- */

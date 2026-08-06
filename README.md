@@ -40,7 +40,10 @@ Shows **how many new emails** landed in your inbox over a time window (default
 The **Top Priority Emails** tile also supports: a **search-criteria** field
 (any Gmail query, ANDed with the time window), **clickable rows** that open the
 message in Gmail, and a per-email **⤳ Evernote shortcut** that files it (via
-Evernote email-in) into a notebook — default **Planning** — with a reminder.
+Evernote email-in) into a notebook — default **Planning** — as a task
+(checkbox + reminder). With **one-click send** on (default), Nexus sends it
+**directly through your Gmail** (needs the `gmail.send` scope, approved once);
+turn it off to open your mail app instead.
 
 ## Tile interactions
 

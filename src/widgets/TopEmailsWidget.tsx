@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { defineWidget, type WidgetProps, type WidgetSettingsProps } from './types'
 import {
   fetchTopEmails,
+  sendGmailMessage,
+  isSendAuthorized,
   isMockMode,
   isConnected,
   connect,
@@ -24,6 +26,8 @@ interface TopEmailsConfig {
   evernoteNotebook: string
   /** Tag added to the filed note. */
   evernoteTag: string
+  /** Send directly via Gmail (one click) instead of opening the mail client. */
+  evernoteDirectSend: boolean
 }
 
 const DEFAULT_CONFIG: TopEmailsConfig = {
@@ -34,6 +38,7 @@ const DEFAULT_CONFIG: TopEmailsConfig = {
   evernoteEmail: '',
   evernoteNotebook: 'Planning',
   evernoteTag: 'task',
+  evernoteDirectSend: true,
 }
 
 function relativeTime(iso: string): string {
@@ -45,36 +50,65 @@ function relativeTime(iso: string): string {
   return `${Math.round(h / 24)}d`
 }
 
-/** Build a mailto: that files the email into Evernote via email-in. */
-function evernoteMailto(email: EmailSummary, cfg: TopEmailsConfig): string {
-  // Evernote email-in: "@Notebook" routes, "#tag" tags, trailing "!" adds a reminder.
-  const subject = `${email.subject} @${cfg.evernoteNotebook} #${cfg.evernoteTag} !`
-  const body = [
+// Evernote email-in: "@Notebook" routes, "#tag" tags, trailing "!" adds a reminder.
+function evernoteSubject(email: EmailSummary, cfg: TopEmailsConfig): string {
+  return `${email.subject} @${cfg.evernoteNotebook} #${cfg.evernoteTag} !`
+}
+function evernoteBody(email: EmailSummary, cfg: TopEmailsConfig): string {
+  return [
+    `- [ ] Follow up: ${email.subject}`,
     `From: ${email.fromName} <${email.fromEmail}>`,
     email.url ? `Open in Gmail: ${email.url}` : '',
     '',
-    'Filed from Nexus dashboard.',
+    `Filed to ${cfg.evernoteNotebook} from Nexus.`,
   ]
     .filter(Boolean)
     .join('\n')
-  return `mailto:${cfg.evernoteEmail}?subject=${encodeURIComponent(
-    subject,
-  )}&body=${encodeURIComponent(body)}`
 }
+function evernoteMailto(email: EmailSummary, cfg: TopEmailsConfig): string {
+  return `mailto:${cfg.evernoteEmail}?subject=${encodeURIComponent(
+    evernoteSubject(email, cfg),
+  )}&body=${encodeURIComponent(evernoteBody(email, cfg))}`
+}
+
+type SendState = 'idle' | 'sending' | 'sent' | 'error'
 
 function EmailRow({
   email,
   rank,
   cfg,
+  onSend,
 }: {
   email: EmailSummary
   rank: number
   cfg: TopEmailsConfig
+  onSend: (email: EmailSummary) => Promise<void>
 }) {
+  const [send, setSend] = useState<SendState>('idle')
   const Main = email.url ? 'a' : 'div'
   const mainProps = email.url
     ? { href: email.url, target: '_blank', rel: 'noreferrer', draggable: false }
     : {}
+
+  const direct = !!cfg.evernoteEmail && cfg.evernoteDirectSend && !isMockMode()
+  const glyph =
+    send === 'sending' ? '…' : send === 'sent' ? '✓' : send === 'error' ? '✗' : '⤳'
+
+  const handleDirect = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (send === 'sending') return
+    setSend('sending')
+    try {
+      await onSend(email)
+      setSend('sent')
+      setTimeout(() => setSend('idle'), 2000)
+    } catch {
+      setSend('error')
+      setTimeout(() => setSend('idle'), 3500)
+    }
+  }
+
   return (
     <li className="mailrow" title={email.reasons.join(' · ') || 'No priority signals'}>
       <span className="mailrow__rank">{rank}</span>
@@ -92,17 +126,27 @@ function EmailRow({
         {email.important && <span className="is-important" title="Important">!</span>}
       </span>
       {cfg.evernoteEmail ? (
-        <a
-          className="mailrow__en"
-          href={evernoteMailto(email, cfg)}
-          target="_blank"
-          rel="noreferrer"
-          draggable={false}
-          title={`Send to Evernote → ${cfg.evernoteNotebook}`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          ⤳
-        </a>
+        direct ? (
+          <button
+            className={`mailrow__en mailrow__en--${send}`}
+            title={`Send to Evernote → ${cfg.evernoteNotebook}`}
+            onClick={handleDirect}
+          >
+            {glyph}
+          </button>
+        ) : (
+          <a
+            className="mailrow__en"
+            href={evernoteMailto(email, cfg)}
+            target="_blank"
+            rel="noreferrer"
+            draggable={false}
+            title={`Send to Evernote → ${cfg.evernoteNotebook} (opens mail app)`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            ⤳
+          </a>
+        )
       ) : null}
     </li>
   )
@@ -113,6 +157,7 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [needsConnect, setNeedsConnect] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
   const mounted = useRef(true)
   const mock = isMockMode()
 
@@ -165,6 +210,24 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
     }
   }
 
+  const sendToEvernote = async (email: EmailSummary) => {
+    try {
+      await sendGmailMessage({
+        to: config.evernoteEmail,
+        subject: evernoteSubject(email, config),
+        body: evernoteBody(email, config),
+        // First send triggers the gmail.send consent popup.
+        interactive: !isSendAuthorized(),
+      })
+      setNote(`Sent to Evernote → ${config.evernoteNotebook}`)
+      setTimeout(() => mounted.current && setNote(null), 2500)
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : 'Evernote send failed')
+      setTimeout(() => mounted.current && setNote(null), 4000)
+      throw err
+    }
+  }
+
   return (
     <div className="widget topemails-widget">
       <div className="widget__head">
@@ -195,7 +258,13 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
           ) : (
             <ol className="maillist">
               {emails.map((e, i) => (
-                <EmailRow key={e.id} email={e} rank={i + 1} cfg={config} />
+                <EmailRow
+                  key={e.id}
+                  email={e}
+                  rank={i + 1}
+                  cfg={config}
+                  onSend={sendToEvernote}
+                />
               ))}
             </ol>
           )}
@@ -205,6 +274,7 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
       <div className="widget__foot">
         {mock && <span className="badge badge--mock">sample data</span>}
         {config.search && <span className="badge" title={config.search}>filtered</span>}
+        {note && <span className="badge badge--note">{note}</span>}
         {loading && <span className="badge">refreshing…</span>}
       </div>
     </div>
@@ -294,11 +364,22 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
           />
         </label>
       </div>
+      <label className="field field--check">
+        <input
+          type="checkbox"
+          checked={config.evernoteDirectSend}
+          onChange={(e) => set({ evernoteDirectSend: e.target.checked })}
+        />
+        <span>One-click send via Gmail (no mail app)</span>
+      </label>
       <p className="settings__hint">
-        Adds a <strong>⤳</strong> shortcut on each email that files it to Evernote
-        (via email-in) into the <strong>{config.evernoteNotebook || 'Planning'}</strong>{' '}
-        notebook with a reminder. Find your address in Evernote → Settings →
-        Email &amp; Calendar → “Email notes to”.
+        The <strong>⤳</strong> button files each email to Evernote in the{' '}
+        <strong>{config.evernoteNotebook || 'Planning'}</strong> notebook as a
+        task (checkbox + reminder). With one-click on, Nexus sends it directly
+        through your Gmail — the first time you'll approve the{' '}
+        <code>gmail.send</code> permission (add that scope to your OAuth consent
+        screen too). Off, it opens your mail app instead. Find your address in
+        Evernote → Settings → Email &amp; Calendar.
       </p>
 
       <div className="settings__divider" />

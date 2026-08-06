@@ -56,8 +56,8 @@ export function setClientId(id: string): void {
   } catch {
     // ignore storage errors
   }
-  // A changed client id invalidates any cached token.
-  setCachedToken(null)
+  // A changed client id invalidates every cached token (all scopes).
+  clearAllScopeTokens()
 }
 
 export function isMockMode(): boolean {
@@ -146,47 +146,74 @@ interface CachedToken {
   expiresAt: number
 }
 
-const TOKEN_KEY = 'nexus.google.token'
+// Additional scope for sending mail (used by the direct Evernote converter).
+const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
 
-function loadPersistedToken(): CachedToken | null {
+const TOKENS_KEY = 'nexus.google.tokens'
+
+type TokenMap = Record<string, CachedToken>
+
+function loadTokens(): TokenMap {
   try {
-    const raw = localStorage.getItem(TOKEN_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as CachedToken
-    if (parsed?.token && typeof parsed.expiresAt === 'number') return parsed
-    return null
+    const raw = localStorage.getItem(TOKENS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as TokenMap
+      if (parsed && typeof parsed === 'object') return parsed
+    }
+    return {}
   } catch {
-    return null
+    return {}
   }
 }
 
-// Seed from storage so a reload reuses a still-valid token (no reconnect click).
-let cachedToken: CachedToken | null = loadPersistedToken()
+// Tokens keyed by scope, seeded from storage so a reload reuses valid tokens.
+let tokens: TokenMap = loadTokens()
 
-function setCachedToken(next: CachedToken | null): void {
-  cachedToken = next
+function persistTokens(): void {
   try {
-    if (next) localStorage.setItem(TOKEN_KEY, JSON.stringify(next))
-    else localStorage.removeItem(TOKEN_KEY)
+    if (Object.keys(tokens).length) {
+      localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens))
+    } else {
+      localStorage.removeItem(TOKENS_KEY)
+    }
   } catch {
-    /* storage unavailable — in-memory token still works for this session */
+    /* storage unavailable — in-memory tokens still work for this session */
   }
 }
 
-function currentValidToken(): string | null {
-  if (cachedToken && cachedToken.expiresAt - 60_000 > Date.now()) {
-    return cachedToken.token
-  }
+function setScopeToken(scope: string, next: CachedToken | null): void {
+  if (next) tokens[scope] = next
+  else delete tokens[scope]
+  persistTokens()
+}
+
+function validScopeToken(scope: string): string | null {
+  const t = tokens[scope]
+  if (t && t.expiresAt - 60_000 > Date.now()) return t.token
   return null
 }
 
+function clearAllScopeTokens(): void {
+  tokens = {}
+  persistTokens()
+}
+
+// --- Backwards-compatible helpers for the read-only Gmail scope ------------
+function setCachedToken(next: CachedToken | null): void {
+  setScopeToken(GMAIL_SCOPE, next)
+}
+
+function currentValidToken(): string | null {
+  return validScopeToken(GMAIL_SCOPE)
+}
+
 /**
- * Obtain a Gmail access token. `interactive` controls whether Google may show
- * the consent/account-picker popup (allowed on an explicit user action such as
- * clicking "Connect"). Non-interactive calls attempt a silent refresh only.
+ * Obtain an access token for a given scope. `interactive` controls whether
+ * Google may show the consent/account-picker popup (allowed on an explicit
+ * user action). Non-interactive calls attempt a silent refresh only.
  */
-async function getAccessToken(interactive: boolean): Promise<string> {
-  const existing = currentValidToken()
+async function requestToken(scope: string, interactive: boolean): Promise<string> {
+  const existing = validScopeToken(scope)
   if (existing) return existing
 
   const clientId = getClientId()
@@ -202,11 +229,9 @@ async function getAccessToken(interactive: boolean): Promise<string> {
     }
     const client = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: GMAIL_SCOPE,
+      scope,
       callback: (resp) => {
         if (resp.error || !resp.access_token) {
-          // A silent attempt without prior consent reports an error here or via
-          // error_callback — treat it as "needs interactive connect".
           finish(() =>
             reject(interactive ? new Error(resp.error || 'Authorization failed') : new NeedsConnectError()),
           )
@@ -214,11 +239,9 @@ async function getAccessToken(interactive: boolean): Promise<string> {
         }
         const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
-        setCachedToken({ token, expiresAt: Date.now() + ttl })
+        setScopeToken(scope, { token, expiresAt: Date.now() + ttl })
         finish(() => resolve(token))
       },
-      // Fired when the popup can't open, consent is required for prompt:'none',
-      // or the user dismisses the flow. Without this the promise would hang.
       error_callback: (err) => {
         finish(() =>
           reject(
@@ -229,14 +252,12 @@ async function getAccessToken(interactive: boolean): Promise<string> {
         )
       },
     })
-    // Backstop: a silent request that never calls back must not hang the tile.
     const timeoutMs = interactive ? 120_000 : 10_000
     setTimeout(
       () => finish(() => reject(interactive ? new Error('Authorization timed out') : new NeedsConnectError())),
       timeoutMs,
     )
     try {
-      // '' asks for a silent grant; 'none' never prompts (used for background refresh).
       client.requestAccessToken({ prompt: interactive ? '' : 'none' })
     } catch (e) {
       finish(() => reject(e instanceof Error ? e : new Error('Authorization failed')))
@@ -244,8 +265,18 @@ async function getAccessToken(interactive: boolean): Promise<string> {
   })
 }
 
+/** Read-only Gmail access token (inbox reading widgets). */
+function getAccessToken(interactive: boolean): Promise<string> {
+  return requestToken(GMAIL_SCOPE, interactive)
+}
+
 export function isConnected(): boolean {
   return currentValidToken() !== null
+}
+
+/** Whether a send-capable token is already granted (one-click Evernote send). */
+export function isSendAuthorized(): boolean {
+  return validScopeToken(GMAIL_SEND_SCOPE) !== null
 }
 
 /** Trigger the interactive Google sign-in / consent flow. */
@@ -253,11 +284,74 @@ export async function connect(): Promise<void> {
   await getAccessToken(true)
 }
 
+/** Ask for the gmail.send scope (interactive consent the first time). */
+export async function authorizeSend(): Promise<void> {
+  await requestToken(GMAIL_SEND_SCOPE, true)
+}
+
 export function disconnect(): void {
-  const token = cachedToken?.token
-  setCachedToken(null)
-  if (token && window.google?.accounts?.oauth2) {
-    window.google.accounts.oauth2.revoke(token)
+  const toRevoke = Object.values(tokens).map((t) => t.token)
+  tokens = {}
+  persistTokens()
+  if (window.google?.accounts?.oauth2) {
+    for (const tok of toRevoke) window.google.accounts.oauth2.revoke(tok)
+  }
+}
+
+/** RFC 2822 message, base64url-encoded, sent via the Gmail API. */
+function toBase64Url(str: string): string {
+  // Handle UTF-8 safely before base64.
+  const bytes = new TextEncoder().encode(str)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+export interface SendMailOptions {
+  to: string
+  subject: string
+  body: string
+  interactive?: boolean
+}
+
+/** Send a plain-text email directly through the connected Gmail account. */
+export async function sendGmailMessage(opts: SendMailOptions): Promise<void> {
+  const { to, subject, body, interactive = false } = opts
+  const token = await requestToken(GMAIL_SEND_SCOPE, interactive)
+  // Encode the subject (may contain non-ASCII) per RFC 2047.
+  const encodedSubject = `=?UTF-8?B?${btoa(
+    String.fromCharCode(...new TextEncoder().encode(subject)),
+  )}?=`
+  const mime =
+    `To: ${to}\r\n` +
+    `Subject: ${encodedSubject}\r\n` +
+    `MIME-Version: 1.0\r\n` +
+    `Content-Type: text/plain; charset=UTF-8\r\n\r\n` +
+    body
+  const res = await fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ raw: toBase64Url(mime) }),
+    },
+  )
+  if (res.status === 401) {
+    setScopeToken(GMAIL_SEND_SCOPE, null)
+    throw new Error('Gmail send session expired — reauthorize required')
+  }
+  if (!res.ok) {
+    let detail = `Gmail send error (${res.status})`
+    try {
+      const err = await res.json()
+      detail = err?.error?.message || detail
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail)
   }
 }
 
