@@ -308,18 +308,25 @@ function startKeepAlive(): void {
     const t = tokens[GMAIL_SCOPE]
     // Only refresh once the user has connected at least once.
     if (!t) return
-    if (t.expiresAt - Date.now() < 5 * 60_000) {
+    // Refresh well ahead of expiry (10 min) so the token is never close to
+    // dying while the tab is open.
+    if (t.expiresAt - Date.now() < 10 * 60_000) {
       // Force a silent refresh (bypass the still-valid cache); failures are
       // non-fatal (widgets retry / offer reconnect).
       requestToken(GMAIL_SCOPE, false, true).catch(() => {})
     }
   }
 
-  window.setInterval(tick, 60_000)
+  // Check every 45s, and whenever the tab/window regains focus or the network
+  // returns — the more often we top up, the less the session can lapse.
+  setInterval(tick, 45_000)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') tick()
   })
+  window.addEventListener('focus', tick)
   window.addEventListener('online', tick)
+  // Prime once shortly after load so an expiring persisted token is topped up.
+  setTimeout(tick, 1_500)
 }
 
 // Begin keep-alive as soon as the module loads (no-op until connected).

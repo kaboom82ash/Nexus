@@ -318,9 +318,19 @@ button {
   font-size: 13px;
   padding: 2px 4px;
   border-radius: 4px;
+  line-height: 1;
 }
 .widget__inline-btn:hover {
   color: var(--text);
+}
+.widget__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.widget__actions .widget__inline-btn {
+  margin-left: 0;
 }
 .widget__body {
   flex: 1;

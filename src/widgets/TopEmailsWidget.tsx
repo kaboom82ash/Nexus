@@ -265,6 +265,24 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
           🏆
         </span>
         <span className="widget__title">{title}</span>
+        <span className="widget__actions">
+          <button
+            className="widget__inline-btn"
+            title="Refresh now"
+            onClick={() => void load(false)}
+          >
+            ↻
+          </button>
+          {!mock && (
+            <button
+              className="widget__inline-btn"
+              title="Reconnect Gmail"
+              onClick={() => void onConnect()}
+            >
+              ⟲
+            </button>
+          )}
+        </span>
       </div>
 
       {needsConnect ? (
