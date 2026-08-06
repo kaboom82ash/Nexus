@@ -311,6 +311,90 @@ button {
   font-size: clamp(18px, 3vw, 26px);
 }
 
+/* ---------- Email list (Top Priority Emails) ---------- */
+.widget__body--list {
+  justify-content: flex-start;
+  overflow-y: auto;
+  gap: 0;
+  margin: 4px -4px 0;
+  padding: 0 4px;
+}
+.maillist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mailrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  min-width: 0;
+}
+.mailrow:last-child {
+  border-bottom: none;
+}
+.mailrow__rank {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: right;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.mailrow__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mailrow__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.mailrow__from {
+  color: var(--text-dim);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mailrow__from.is-unread {
+  color: var(--text);
+}
+.mailrow__time {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.mailrow__subject {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mailrow__flags {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 3px;
+  color: #d1a054;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.mailrow__flags .is-important {
+  color: var(--accent-soft);
+  font-weight: 700;
+}
+
 /* ---------- Badges ---------- */
 .badge {
   font-size: 10px;

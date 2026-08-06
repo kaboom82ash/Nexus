@@ -1,12 +1,13 @@
 import type { WidgetDefinition } from './types'
 import { gmailInboxWidget } from './GmailInboxWidget'
+import { topEmailsWidget } from './TopEmailsWidget'
 
 /**
  * The widget registry. To add a new widget type, build it in its own file
  * (exporting a `WidgetDefinition`) and add it to this array — nothing else
  * needs to change.
  */
-const WIDGETS: WidgetDefinition<any>[] = [gmailInboxWidget]
+const WIDGETS: WidgetDefinition<any>[] = [gmailInboxWidget, topEmailsWidget]
 
 const byType = new Map<string, WidgetDefinition<any>>(
   WIDGETS.map((w) => [w.type, w]),

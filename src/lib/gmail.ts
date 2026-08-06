@@ -282,3 +282,337 @@ export async function fetchInboxStats(opts: FetchOptions): Promise<InboxStats> {
     mock: false,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Priority inbox: rank the most important recent emails
+// ---------------------------------------------------------------------------
+
+export type MailCategory =
+  | 'personal'
+  | 'updates'
+  | 'social'
+  | 'forums'
+  | 'promotions'
+  | 'other'
+
+export interface EmailSummary {
+  id: string
+  threadId: string
+  /** Display name if present, else the email address. */
+  fromName: string
+  fromEmail: string
+  subject: string
+  /** ISO timestamp. */
+  date: string
+  unread: boolean
+  important: boolean
+  starred: boolean
+  category: MailCategory
+  /** Computed priority score (higher = more important). */
+  score: number
+  /** Short human-readable reasons the score was assigned. */
+  reasons: string[]
+}
+
+/** How many recent messages we score before taking the top N. */
+const SCORE_CANDIDATE_CAP = 40
+
+const TRANSACTIONAL =
+  /\b(order|ordered|receipt|payment|paid|invoice|statement|refund|shipped|delivery|delivered|confirmation|confirmed|venmo|paypal|klarna|zelle|deposit|transfer|bank|billing|charged)\b/i
+
+const JOB_ALERT =
+  /\b(hiring|job|jobs|role|position|opening|opportunit)/i
+
+function categoryFromLabels(labels: string[]): MailCategory {
+  if (labels.includes('CATEGORY_PERSONAL')) return 'personal'
+  if (labels.includes('CATEGORY_UPDATES')) return 'updates'
+  if (labels.includes('CATEGORY_SOCIAL')) return 'social'
+  if (labels.includes('CATEGORY_FORUMS')) return 'forums'
+  if (labels.includes('CATEGORY_PROMOTIONS')) return 'promotions'
+  return 'other'
+}
+
+function parseFrom(raw: string): { name: string; email: string } {
+  // "Display Name <addr@host>" | "addr@host"
+  const m = raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/)
+  if (m) return { name: m[1].trim() || m[2].trim(), email: m[2].trim() }
+  return { name: raw.trim(), email: raw.trim() }
+}
+
+interface ScoreInput {
+  labels: string[]
+  from: string
+  subject: string
+  hasListUnsubscribe: boolean
+}
+
+/** Transparent, tunable priority heuristic. Returns score + reasons. */
+export function scoreEmail(input: ScoreInput): { score: number; reasons: string[] } {
+  const { labels, from, subject, hasListUnsubscribe } = input
+  const category = categoryFromLabels(labels)
+  const text = `${from} ${subject}`
+  let score = 0
+  const reasons: string[] = []
+
+  if (labels.includes('STARRED')) {
+    score += 5
+    reasons.push('Starred')
+  }
+  if (labels.includes('IMPORTANT')) {
+    score += 4
+    reasons.push('Marked important')
+  }
+  if (TRANSACTIONAL.test(text)) {
+    score += 4
+    reasons.push('Transactional')
+  }
+  if (category === 'personal') {
+    score += 3
+    reasons.push('Primary')
+  } else if (category === 'updates') {
+    score += 1
+    reasons.push('Update')
+  } else if (category === 'promotions') {
+    score -= 3
+    reasons.push('Promotion')
+  } else if (category === 'social') {
+    score -= 1
+    reasons.push('Social')
+  }
+  if (hasListUnsubscribe && !TRANSACTIONAL.test(text)) {
+    score -= 2
+    reasons.push('Bulk mail')
+  }
+  if (JOB_ALERT.test(subject)) {
+    score += 1
+    reasons.push('Job alert')
+  }
+  if (labels.includes('UNREAD')) {
+    score += 1
+    reasons.push('Unread')
+  }
+  return { score, reasons }
+}
+
+interface GmailMessageMeta {
+  id: string
+  threadId: string
+  labelIds?: string[]
+  internalDate?: string
+  payload?: { headers?: { name: string; value: string }[] }
+}
+
+async function listMessageIds(
+  token: string,
+  query: string,
+  cap: number,
+): Promise<string[]> {
+  const ids: string[] = []
+  let pageToken: string | undefined
+  do {
+    const url = new URL(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+    )
+    url.searchParams.set('q', query)
+    url.searchParams.set('maxResults', String(Math.min(PAGE_SIZE, cap)))
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.status === 401) {
+      cachedToken = null
+      throw new Error('Gmail session expired — reconnect required')
+    }
+    if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
+    const data = (await res.json()) as MessagesListResponse
+    for (const m of data.messages ?? []) ids.push(m.id)
+    pageToken = data.nextPageToken
+  } while (pageToken && ids.length < cap)
+  return ids.slice(0, cap)
+}
+
+async function getMessageMeta(
+  token: string,
+  id: string,
+): Promise<GmailMessageMeta> {
+  const url = new URL(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
+  )
+  url.searchParams.set('format', 'metadata')
+  for (const h of ['From', 'Subject', 'Date', 'List-Unsubscribe']) {
+    url.searchParams.append('metadataHeaders', h)
+  }
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 401) {
+    cachedToken = null
+    throw new Error('Gmail session expired — reconnect required')
+  }
+  if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
+  return (await res.json()) as GmailMessageMeta
+}
+
+function headerValue(meta: GmailMessageMeta, name: string): string {
+  const h = meta.payload?.headers?.find(
+    (x) => x.name.toLowerCase() === name.toLowerCase(),
+  )
+  return h?.value ?? ''
+}
+
+function metaToSummary(meta: GmailMessageMeta): EmailSummary {
+  const labels = meta.labelIds ?? []
+  const fromRaw = headerValue(meta, 'From')
+  const subject = headerValue(meta, 'Subject') || '(no subject)'
+  const { name, email } = parseFrom(fromRaw)
+  const hasListUnsubscribe = headerValue(meta, 'List-Unsubscribe') !== ''
+  const { score, reasons } = scoreEmail({
+    labels,
+    from: fromRaw,
+    subject,
+    hasListUnsubscribe,
+  })
+  const date = meta.internalDate
+    ? new Date(Number(meta.internalDate)).toISOString()
+    : new Date(headerValue(meta, 'Date') || 0).toISOString()
+  return {
+    id: meta.id,
+    threadId: meta.threadId,
+    fromName: name,
+    fromEmail: email,
+    subject,
+    date,
+    unread: labels.includes('UNREAD'),
+    important: labels.includes('IMPORTANT'),
+    starred: labels.includes('STARRED'),
+    category: categoryFromLabels(labels),
+    score,
+    reasons,
+  }
+}
+
+export interface TopEmailsOptions {
+  lookbackHours: number
+  limit: number
+  interactive?: boolean
+}
+
+export interface TopEmailsResult {
+  emails: EmailSummary[]
+  mock: boolean
+}
+
+export async function fetchTopEmails(
+  opts: TopEmailsOptions,
+): Promise<TopEmailsResult> {
+  const { lookbackHours, limit, interactive = false } = opts
+
+  if (isMockMode()) {
+    return { emails: mockTopEmails().slice(0, limit), mock: true }
+  }
+
+  const token = await getAccessToken(interactive)
+  const query = lookbackQuery(lookbackHours)
+  const ids = await listMessageIds(token, query, SCORE_CANDIDATE_CAP)
+  const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
+  const emails = metas
+    .map(metaToSummary)
+    .sort((a, b) => b.score - a.score || b.date.localeCompare(a.date))
+    .slice(0, limit)
+  return { emails, mock: false }
+}
+
+// Generic, fictional sample data (no real account content).
+function mockTopEmails(): EmailSummary[] {
+  const now = Date.now()
+  const mins = (m: number) => new Date(now - m * 60_000).toISOString()
+  const mk = (
+    p: Partial<EmailSummary> & Pick<EmailSummary, 'fromName' | 'subject'>,
+    labels: string[],
+    from: string,
+    listUnsub: boolean,
+  ): EmailSummary => {
+    const { score, reasons } = scoreEmail({
+      labels,
+      from,
+      subject: p.subject,
+      hasListUnsubscribe: listUnsub,
+    })
+    return {
+      id: p.id ?? p.subject,
+      threadId: p.id ?? p.subject,
+      fromEmail: p.fromEmail ?? from,
+      date: p.date ?? mins(30),
+      unread: labels.includes('UNREAD'),
+      important: labels.includes('IMPORTANT'),
+      starred: labels.includes('STARRED'),
+      category: categoryFromLabels(labels),
+      score,
+      reasons,
+      fromName: p.fromName,
+      subject: p.subject,
+    }
+  }
+  return [
+    mk(
+      { fromName: 'PayPal', subject: 'Your payment of $84.20 was sent', date: mins(22) },
+      ['UNREAD', 'IMPORTANT', 'CATEGORY_UPDATES'],
+      'service@paypal.com',
+      false,
+    ),
+    mk(
+      { fromName: 'Sam Rivera', subject: 'Re: lunch Thursday?', date: mins(48) },
+      ['UNREAD', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+      'sam.rivera@example.com',
+      false,
+    ),
+    mk(
+      { fromName: 'Amazon', subject: 'Ordered: 1 item — arriving Friday', date: mins(70) },
+      ['CATEGORY_UPDATES'],
+      'auto-confirm@amazon.com',
+      false,
+    ),
+    mk(
+      { fromName: 'GitHub', subject: '[acme/app] CI passed on main', date: mins(95) },
+      ['UNREAD', 'CATEGORY_UPDATES'],
+      'notifications@github.com',
+      true,
+    ),
+    mk(
+      { fromName: 'Dr. Lee Office', subject: 'Appointment reminder: Tue 9:00 AM', date: mins(130) },
+      ['UNREAD', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+      'reminders@clinic.example',
+      false,
+    ),
+    mk(
+      { fromName: 'The Daily Brief', subject: "Today's top stories", date: mins(160) },
+      ['UNREAD', 'CATEGORY_UPDATES'],
+      'news@dailybrief.example',
+      true,
+    ),
+    mk(
+      { fromName: 'LinkedIn', subject: 'Senior Analyst roles in your area', date: mins(190) },
+      ['UNREAD', 'CATEGORY_UPDATES'],
+      'jobalerts-noreply@linkedin.com',
+      true,
+    ),
+    mk(
+      { fromName: 'Chase', subject: 'Your July statement is ready', date: mins(230) },
+      ['CATEGORY_UPDATES'],
+      'no.reply@chase.com',
+      true,
+    ),
+    mk(
+      { fromName: 'Nike', subject: '🔥 30% off ends tonight', date: mins(260) },
+      ['UNREAD', 'CATEGORY_PROMOTIONS'],
+      'nike@notifications.nike.com',
+      true,
+    ),
+    mk(
+      { fromName: 'Temu', subject: 'Your $100 coupon is waiting', date: mins(300) },
+      ['UNREAD', 'CATEGORY_PROMOTIONS'],
+      'email@news.temuemail.com',
+      true,
+    ),
+  ].sort((a, b) => b.score - a.score || b.date.localeCompare(a.date))
+}
