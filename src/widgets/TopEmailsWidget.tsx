@@ -16,12 +16,24 @@ interface TopEmailsConfig {
   lookbackHours: number
   limit: number
   refreshSeconds: number
+  /** Extra Gmail search criteria, e.g. "is:starred OR from:boss@x.com". */
+  search: string
+  /** Evernote email-in address (…@m.evernote.com) for the "to Evernote" shortcut. */
+  evernoteEmail: string
+  /** Evernote notebook the shortcut files into. */
+  evernoteNotebook: string
+  /** Tag added to the filed note. */
+  evernoteTag: string
 }
 
 const DEFAULT_CONFIG: TopEmailsConfig = {
   lookbackHours: 24,
   limit: 10,
   refreshSeconds: 300,
+  search: '',
+  evernoteEmail: '',
+  evernoteNotebook: 'Planning',
+  evernoteTag: 'task',
 }
 
 function relativeTime(iso: string): string {
@@ -33,11 +45,40 @@ function relativeTime(iso: string): string {
   return `${Math.round(h / 24)}d`
 }
 
-function EmailRow({ email, rank }: { email: EmailSummary; rank: number }) {
+/** Build a mailto: that files the email into Evernote via email-in. */
+function evernoteMailto(email: EmailSummary, cfg: TopEmailsConfig): string {
+  // Evernote email-in: "@Notebook" routes, "#tag" tags, trailing "!" adds a reminder.
+  const subject = `${email.subject} @${cfg.evernoteNotebook} #${cfg.evernoteTag} !`
+  const body = [
+    `From: ${email.fromName} <${email.fromEmail}>`,
+    email.url ? `Open in Gmail: ${email.url}` : '',
+    '',
+    'Filed from Nexus dashboard.',
+  ]
+    .filter(Boolean)
+    .join('\n')
+  return `mailto:${cfg.evernoteEmail}?subject=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`
+}
+
+function EmailRow({
+  email,
+  rank,
+  cfg,
+}: {
+  email: EmailSummary
+  rank: number
+  cfg: TopEmailsConfig
+}) {
+  const Main = email.url ? 'a' : 'div'
+  const mainProps = email.url
+    ? { href: email.url, target: '_blank', rel: 'noreferrer', draggable: false }
+    : {}
   return (
     <li className="mailrow" title={email.reasons.join(' · ') || 'No priority signals'}>
       <span className="mailrow__rank">{rank}</span>
-      <span className="mailrow__main">
+      <Main className="mailrow__main mailrow__main--link" {...mainProps}>
         <span className="mailrow__top">
           <span className={`mailrow__from ${email.unread ? 'is-unread' : ''}`}>
             {email.fromName}
@@ -45,11 +86,24 @@ function EmailRow({ email, rank }: { email: EmailSummary; rank: number }) {
           <span className="mailrow__time">{relativeTime(email.date)}</span>
         </span>
         <span className="mailrow__subject">{email.subject}</span>
-      </span>
+      </Main>
       <span className="mailrow__flags">
         {email.starred && <span title="Starred">★</span>}
         {email.important && <span className="is-important" title="Important">!</span>}
       </span>
+      {cfg.evernoteEmail ? (
+        <a
+          className="mailrow__en"
+          href={evernoteMailto(email, cfg)}
+          target="_blank"
+          rel="noreferrer"
+          draggable={false}
+          title={`Send to Evernote → ${cfg.evernoteNotebook}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          ⤳
+        </a>
+      ) : null}
     </li>
   )
 }
@@ -70,6 +124,7 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
         const res = await fetchTopEmails({
           lookbackHours: config.lookbackHours,
           limit: config.limit,
+          search: config.search,
           interactive,
         })
         if (!mounted.current) return
@@ -86,7 +141,7 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
         if (mounted.current) setLoading(false)
       }
     },
-    [config.lookbackHours, config.limit],
+    [config.lookbackHours, config.limit, config.search],
   )
 
   useEffect(() => {
@@ -136,11 +191,11 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
       ) : (
         <div className="widget__body widget__body--list">
           {emails.length === 0 && !loading ? (
-            <p className="widget__hint">No emails in the last {config.lookbackHours}h.</p>
+            <p className="widget__hint">No emails match in the last {config.lookbackHours}h.</p>
           ) : (
             <ol className="maillist">
               {emails.map((e, i) => (
-                <EmailRow key={e.id} email={e} rank={i + 1} />
+                <EmailRow key={e.id} email={e} rank={i + 1} cfg={config} />
               ))}
             </ol>
           )}
@@ -149,6 +204,7 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
 
       <div className="widget__foot">
         {mock && <span className="badge badge--mock">sample data</span>}
+        {config.search && <span className="badge" title={config.search}>filtered</span>}
         {loading && <span className="badge">refreshing…</span>}
       </div>
     </div>
@@ -158,48 +214,92 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
 function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsConfig>) {
   const [clientId, setClientIdInput] = useState(getClientId())
   const connected = isConnected()
+  const set = (patch: Partial<TopEmailsConfig>) => onChange({ ...config, ...patch })
 
   return (
     <div className="settings-body">
-      <label className="field">
-        <span>Look back (hours)</span>
-        <input
-          type="number"
-          min={1}
-          value={config.lookbackHours}
-          onChange={(e) =>
-            onChange({ ...config, lookbackHours: Math.max(1, Number(e.target.value)) })
-          }
-        />
-      </label>
+      <div className="field-row">
+        <label className="field">
+          <span>Look back (hours)</span>
+          <input
+            type="number"
+            min={1}
+            value={config.lookbackHours}
+            onChange={(e) => set({ lookbackHours: Math.max(1, Number(e.target.value)) })}
+          />
+        </label>
+        <label className="field">
+          <span>How many</span>
+          <input
+            type="number"
+            min={1}
+            max={25}
+            value={config.limit}
+            onChange={(e) =>
+              set({ limit: Math.min(25, Math.max(1, Number(e.target.value))) })
+            }
+          />
+        </label>
+        <label className="field">
+          <span>Refresh (s)</span>
+          <input
+            type="number"
+            min={30}
+            value={config.refreshSeconds}
+            onChange={(e) => set({ refreshSeconds: Math.max(30, Number(e.target.value)) })}
+          />
+        </label>
+      </div>
 
       <label className="field">
-        <span>How many to show</span>
+        <span>Search criteria (Gmail query, optional)</span>
         <input
-          type="number"
-          min={1}
-          max={25}
-          value={config.limit}
-          onChange={(e) =>
-            onChange({
-              ...config,
-              limit: Math.min(25, Math.max(1, Number(e.target.value))),
-            })
-          }
+          type="text"
+          placeholder="e.g. is:starred OR from:boss@co.com  ·  label:work  ·  -category:promotions"
+          value={config.search}
+          onChange={(e) => set({ search: e.target.value })}
         />
       </label>
+      <p className="settings__hint">
+        ANDed with <code>in:inbox newer_than:{config.lookbackHours}h</code>. Uses
+        Gmail search operators (from:, is:, label:, subject:, OR, -exclude…).
+      </p>
+
+      <div className="settings__divider" />
 
       <label className="field">
-        <span>Auto-refresh (seconds)</span>
+        <span>Evernote email-in address</span>
         <input
-          type="number"
-          min={30}
-          value={config.refreshSeconds}
-          onChange={(e) =>
-            onChange({ ...config, refreshSeconds: Math.max(30, Number(e.target.value)) })
-          }
+          type="text"
+          placeholder="yourname.abc123@m.evernote.com"
+          value={config.evernoteEmail}
+          onChange={(e) => set({ evernoteEmail: e.target.value })}
         />
       </label>
+      <div className="field-row">
+        <label className="field">
+          <span>Notebook (folder)</span>
+          <input
+            type="text"
+            value={config.evernoteNotebook}
+            onChange={(e) => set({ evernoteNotebook: e.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span>Tag</span>
+          <input
+            type="text"
+            value={config.evernoteTag}
+            onChange={(e) => set({ evernoteTag: e.target.value })}
+          />
+        </label>
+      </div>
+      <p className="settings__hint">
+        Adds a <strong>⤳</strong> shortcut on each email that files it to Evernote
+        (via email-in) into the <strong>{config.evernoteNotebook || 'Planning'}</strong>{' '}
+        notebook with a reminder. Find your address in Evernote → Settings →
+        Email &amp; Calendar → “Email notes to”.
+      </p>
 
       <div className="settings__divider" />
 

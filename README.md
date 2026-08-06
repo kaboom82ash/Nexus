@@ -35,6 +35,12 @@ Shows **how many new emails** landed in your inbox over a time window (default
 - **AI Prompt** — type a prompt in the tile's settings; the model's answer streams
   live onto the tile. Runs in demo mode until you add an Anthropic API key
   (stored only in your browser; sent directly to Anthropic).
+- **Skills** — a catalog tile listing every widget available to add.
+
+The **Top Priority Emails** tile also supports: a **search-criteria** field
+(any Gmail query, ANDed with the time window), **clickable rows** that open the
+message in Gmail, and a per-email **⤳ Evernote shortcut** that files it (via
+Evernote email-in) into a notebook — default **Planning** — with a reminder.
 
 ## Tile interactions
 

@@ -357,6 +357,13 @@ export interface EmailSummary {
   score: number
   /** Short human-readable reasons the score was assigned. */
   reasons: string[]
+  /** Deep link to open this message in Gmail on the web (empty for mock data). */
+  url: string
+}
+
+/** Web link that opens a specific message/thread in Gmail. */
+export function gmailWebUrl(messageId: string): string {
+  return `https://mail.google.com/mail/u/0/#all/${messageId}`
 }
 
 /** How many recent messages we score before taking the top N. */
@@ -533,12 +540,15 @@ function metaToSummary(meta: GmailMessageMeta): EmailSummary {
     category: categoryFromLabels(labels),
     score,
     reasons,
+    url: gmailWebUrl(meta.id),
   }
 }
 
 export interface TopEmailsOptions {
   lookbackHours: number
   limit: number
+  /** Extra Gmail search criteria ANDed with the inbox+time window. */
+  search?: string
   interactive?: boolean
 }
 
@@ -550,14 +560,15 @@ export interface TopEmailsResult {
 export async function fetchTopEmails(
   opts: TopEmailsOptions,
 ): Promise<TopEmailsResult> {
-  const { lookbackHours, limit, interactive = false } = opts
+  const { lookbackHours, limit, search, interactive = false } = opts
 
   if (isMockMode()) {
     return { emails: mockTopEmails().slice(0, limit), mock: true }
   }
 
   const token = await getAccessToken(interactive)
-  const query = lookbackQuery(lookbackHours)
+  const extra = search?.trim() ? ` ${search.trim()}` : ''
+  const query = `${lookbackQuery(lookbackHours)}${extra}`
   const ids = await listMessageIds(token, query, SCORE_CANDIDATE_CAP)
   const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
   const emails = metas
@@ -596,6 +607,7 @@ function mockTopEmails(): EmailSummary[] {
       reasons,
       fromName: p.fromName,
       subject: p.subject,
+      url: p.url ?? '',
     }
   }
   return [
