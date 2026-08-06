@@ -968,3 +968,60 @@ a.mailrow__main--link:hover .mailrow__subject {
   color: #d1a054;
   border-color: rgba(209, 160, 84, 0.3);
 }
+
+/* ---------- News widget ---------- */
+.newslist {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.newsrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.newsrow:last-child {
+  border-bottom: none;
+}
+.newsrow__rank {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: right;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.newsrow__link {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text-dim);
+}
+.newsrow__link:hover .newsrow__title {
+  color: var(--accent-soft);
+  text-decoration: underline;
+}
+.newsrow__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.newsrow__time {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}

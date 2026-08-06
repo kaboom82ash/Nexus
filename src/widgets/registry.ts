@@ -3,6 +3,7 @@ import { gmailInboxWidget } from './GmailInboxWidget'
 import { topEmailsWidget } from './TopEmailsWidget'
 import { promptWidget } from './PromptWidget'
 import { skillsWidget } from './SkillsWidget'
+import { newsWidget } from './NewsWidget'
 
 /**
  * The widget registry. To add a new widget type, build it in its own file
@@ -14,6 +15,7 @@ const WIDGETS: WidgetDefinition<any>[] = [
   topEmailsWidget,
   promptWidget,
   skillsWidget,
+  newsWidget,
 ]
 
 const byType = new Map<string, WidgetDefinition<any>>(
