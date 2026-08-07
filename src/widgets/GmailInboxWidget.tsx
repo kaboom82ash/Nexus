@@ -82,7 +82,8 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
   const onConnect = useCallback(async () => {
     try {
       await connect()
-      await load(true)
+      // connect() already cached the token; reload silently (no 2nd popup).
+      await load(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
       setNeedsConnect(false)

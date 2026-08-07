@@ -324,7 +324,8 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
   const onConnect = useCallback(async () => {
     try {
       await connect()
-      await loadFirst(true)
+      // connect() already cached the token; reload silently (no 2nd popup).
+      await loadFirst(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
       setNeedsConnect(false)
