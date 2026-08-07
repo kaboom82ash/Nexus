@@ -1033,3 +1033,75 @@ a.mailrow__main--link:hover .mailrow__subject {
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Claude Agents widget ---------- */
+.agents__select {
+  margin-left: auto;
+  max-width: 45%;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 2px 4px;
+  outline: none;
+}
+.agents__select:focus {
+  border-color: var(--accent);
+}
+.agents__inputrow {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding-top: 6px;
+}
+.agents__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  max-height: 60px;
+}
+.agents__input:focus {
+  border-color: var(--accent);
+}
+.agents__inputrow .btn {
+  flex: 0 0 auto;
+}
+
+/* Agent editor (settings) */
+.agentedit {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-elev-2);
+}
+.agentedit__row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.agentedit__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+.agentedit__name:focus {
+  border-color: var(--accent);
+}

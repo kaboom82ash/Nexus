@@ -39,16 +39,26 @@ export interface RunPromptOptions {
   prompt: string
   model: string
   maxTokens: number
+  /** Optional system prompt — used to give an "agent" its role. */
+  system?: string
   /** Called with each incremental chunk of text as it streams in. */
   onToken: (chunk: string) => void
   signal?: AbortSignal
 }
 
 export async function runPrompt(opts: RunPromptOptions): Promise<string> {
-  const { prompt, model, maxTokens, onToken, signal } = opts
+  const { prompt, model, maxTokens, system, onToken, signal } = opts
   if (!prompt.trim()) return ''
 
   if (isLlmMock()) return runMock(prompt, onToken, signal)
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    stream: true,
+    messages: [{ role: 'user', content: prompt }],
+  }
+  if (system && system.trim()) body.system = system
 
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -59,12 +69,7 @@ export async function runPrompt(opts: RunPromptOptions): Promise<string> {
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      stream: true,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok || !res.body) {
