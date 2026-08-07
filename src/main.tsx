@@ -13,7 +13,15 @@ createRoot(rootEl).render(
 )
 
 // Register the service worker so Nexus is installable as a standalone app.
+// When a new SW takes control (e.g. after a deploy), reload ONCE so the fresh
+// app code loads instead of a stale cached bundle.
 if ('serviceWorker' in navigator) {
+  let reloading = false
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return
+    reloading = true
+    window.location.reload()
+  })
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register(`${import.meta.env.BASE_URL}sw.js`)
