@@ -26,8 +26,14 @@ export function GmailAuthBar() {
     ensureConnected().then((ok) => {
       if (alive) setState(ok ? 'connected' : 'loggedout')
     })
+    // If any widget completes sign-in, reflect it here (one shared session).
+    const onToken = () => {
+      if (alive) setState('connected')
+    }
+    window.addEventListener('nexus:gmail-token', onToken)
     return () => {
       alive = false
+      window.removeEventListener('nexus:gmail-token', onToken)
     }
   }, [])
 

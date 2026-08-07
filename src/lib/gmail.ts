@@ -212,27 +212,51 @@ function currentValidToken(): string | null {
  * Google may show the consent/account-picker popup (allowed on an explicit
  * user action). Non-interactive calls attempt a silent refresh only.
  */
-// De-dupe concurrent token requests per scope so a burst of calls (e.g. counts
-// + email page at once) can't open two consent popups or fire two grants.
-const inflight: Record<string, Promise<string> | undefined> = {}
+// De-dupe concurrent token requests per scope. Silent and interactive requests
+// are tracked SEPARATELY: an interactive "Connect" must never be handed a
+// pending silent attempt (which is designed to fail quietly) — that caused a
+// sign-in loop. All widgets share the one interactive flow and its resulting
+// token, so you authenticate once for every Gmail widget.
+const silentInflight: Record<string, Promise<string> | undefined> = {}
+const interactiveInflight: Record<string, Promise<string> | undefined> = {}
 
 async function requestToken(
   scope: string,
   interactive: boolean,
   force = false,
 ): Promise<string> {
+  // A valid cached token satisfies everyone, silent or interactive.
   if (!force) {
     const existing = validScopeToken(scope)
     if (existing) return existing
-    const pending = inflight[scope]
+  }
+
+  if (interactive) {
+    // Coalesce concurrent interactive requests into a single popup.
+    const pending = interactiveInflight[scope]
+    if (pending) return pending
+    const p = acquireToken(scope, true)
+    interactiveInflight[scope] = p
+    // Clear on settle without creating an unhandled rejection.
+    const clear = () => {
+      if (interactiveInflight[scope] === p) interactiveInflight[scope] = undefined
+    }
+    p.then(clear, clear)
+    return p
+  }
+
+  // Silent path: coalesce concurrent silent refreshes (unless forced).
+  if (!force) {
+    const pending = silentInflight[scope]
     if (pending) return pending
   }
-  const p = acquireToken(scope, interactive)
+  const p = acquireToken(scope, false)
   if (!force) {
-    inflight[scope] = p
-    void p.finally(() => {
-      if (inflight[scope] === p) inflight[scope] = undefined
-    })
+    silentInflight[scope] = p
+    const clear = () => {
+      if (silentInflight[scope] === p) silentInflight[scope] = undefined
+    }
+    p.then(clear, clear)
   }
   return p
 }
