@@ -12,21 +12,18 @@ createRoot(rootEl).render(
   </StrictMode>,
 )
 
-// Register the service worker so Nexus is installable as a standalone app.
-// When a new SW takes control (e.g. after a deploy), reload ONCE so the fresh
-// app code loads instead of a stale cached bundle.
+// Purge any previously-installed service worker + caches. An earlier SW could
+// pin stale app code or trap the app in a reload/refetch loop, so we remove it
+// entirely. (The PWA still installs on desktop from the manifest alone.)
 if ('serviceWorker' in navigator) {
-  let reloading = false
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return
-    reloading = true
-    window.location.reload()
-  })
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register(`${import.meta.env.BASE_URL}sw.js`)
-      .catch(() => {
-        /* SW is a progressive enhancement — ignore failures */
-      })
-  })
+  navigator.serviceWorker
+    .getRegistrations()
+    .then((regs) => regs.forEach((r) => r.unregister()))
+    .catch(() => {})
+}
+if (typeof caches !== 'undefined') {
+  caches
+    .keys()
+    .then((keys) => keys.forEach((k) => caches.delete(k)))
+    .catch(() => {})
 }

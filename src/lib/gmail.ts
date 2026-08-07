@@ -286,9 +286,10 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
         const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
         setScopeToken(scope, { token, expiresAt: Date.now() + ttl })
-        // Let all Gmail widgets know a read-only token is now available so they
-        // can refresh immediately (e.g. after a header "Log in to Gmail").
-        if (scope === GMAIL_SCOPE && typeof window !== 'undefined') {
+        // Broadcast ONLY on an interactive sign-in so all widgets refresh once
+        // after login. Silent/background refreshes must NOT broadcast, or they
+        // can re-trigger loads in a loop.
+        if (interactive && scope === GMAIL_SCOPE && typeof window !== 'undefined') {
           window.dispatchEvent(new Event('nexus:gmail-token'))
         }
         finish(() => resolve(token))
