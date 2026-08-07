@@ -12,6 +12,9 @@
 
 const KEY_STORAGE = 'nexus.anthropic.key'
 const API_URL = 'https://api.anthropic.com/v1/messages'
+const AGENTS_URL = 'https://api.anthropic.com/v1/agents'
+/** Beta header gating the Managed Agents API. */
+const AGENTS_BETA = 'managed-agents-2026-04-01'
 
 export function getApiKey(): string {
   try {
@@ -116,6 +119,88 @@ export async function runPrompt(opts: RunPromptOptions): Promise<string> {
     }
   }
   return full
+}
+
+/**
+ * A saved agent pulled from your Anthropic (Claude) account via the
+ * Managed Agents API. We only keep the fields this dashboard needs to turn a
+ * server-managed agent into a local persona: its id, display name, and the
+ * system prompt that defines its role.
+ */
+export interface AccountAgent {
+  id: string
+  name: string
+  system: string
+  description?: string
+}
+
+/**
+ * List the agents saved on your Claude account (Managed Agents, beta).
+ *
+ * Calls `GET /v1/agents` directly from the browser using the Anthropic API key
+ * from Global settings, with the `managed-agents-2026-04-01` beta header. Pages
+ * through all results. Throws a readable Error on any failure (no key, CORS,
+ * beta not enabled, HTTP error) so the caller can surface it inline.
+ */
+export async function listAccountAgents(signal?: AbortSignal): Promise<AccountAgent[]> {
+  const key = getApiKey()
+  if (!key) throw new Error('Set your Anthropic API key in Global settings first.')
+
+  const out: AccountAgent[] = []
+  let afterId: string | undefined
+  // Bounded loop so a misbehaving cursor can never spin forever.
+  for (let page = 0; page < 20; page++) {
+    const url = new URL(AGENTS_URL)
+    url.searchParams.set('limit', '100')
+    if (afterId) url.searchParams.set('after_id', afterId)
+
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      signal,
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': AGENTS_BETA,
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    })
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try {
+        const err = await res.json()
+        detail = err?.error?.message || detail
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail)
+    }
+
+    const body = await res.json()
+    const data: unknown = body?.data
+    if (Array.isArray(data)) {
+      for (const raw of data) {
+        const a = raw as Record<string, unknown>
+        if (!a || typeof a.id !== 'string') continue
+        out.push({
+          id: a.id,
+          name:
+            typeof a.name === 'string' && a.name.trim() ? (a.name as string) : a.id,
+          system: typeof a.system === 'string' ? (a.system as string) : '',
+          description:
+            typeof a.description === 'string' ? (a.description as string) : undefined,
+        })
+      }
+    }
+
+    if (body?.has_more && typeof body?.last_id === 'string') {
+      afterId = body.last_id as string
+    } else {
+      break
+    }
+  }
+
+  return out
 }
 
 async function runMock(

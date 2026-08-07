@@ -1078,6 +1078,17 @@ a.mailrow__main--link:hover .mailrow__subject {
 }
 
 /* Agent editor (settings) */
+.agents__pullhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.agents__pullhead .settings__section {
+  margin: 0;
+}
 .agentedit {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

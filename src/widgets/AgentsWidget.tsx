@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { defineWidget, type WidgetProps, type WidgetSettingsProps } from './types'
-import { runPrompt, isLlmMock } from '../lib/llm'
+import { runPrompt, isLlmMock, listAccountAgents } from '../lib/llm'
 import { makeId } from '../lib/id'
 
 interface Agent {
@@ -183,6 +183,49 @@ function AgentsBody({ config, title }: WidgetProps<AgentsConfig>) {
 function AgentsSettings({ config, onChange }: WidgetSettingsProps<AgentsConfig>) {
   const set = (patch: Partial<AgentsConfig>) => onChange({ ...config, ...patch })
 
+  const [pulling, setPulling] = useState(false)
+  const [pullMsg, setPullMsg] = useState<string | null>(null)
+  const [pullErr, setPullErr] = useState<string | null>(null)
+
+  const pullFromAccount = async () => {
+    setPulling(true)
+    setPullMsg(null)
+    setPullErr(null)
+    try {
+      const account = await listAccountAgents()
+      if (account.length === 0) {
+        setPullMsg('No agents found on your Claude account.')
+        return
+      }
+      // Map each server-managed agent to a local persona. Keep any locally
+      // authored agents that aren't backed by an account agent so custom
+      // personas survive a pull.
+      const pulled: Agent[] = account.map((a) => ({
+        id: a.id,
+        name: a.name,
+        system: a.system || (a.description ? a.description : `You are ${a.name}.`),
+      }))
+      const pulledIds = new Set(pulled.map((a) => a.id))
+      const localOnly = config.agents.filter(
+        (a) => !a.id.startsWith('agent_') && !pulledIds.has(a.id),
+      )
+      const agents = [...pulled, ...localOnly]
+      set({
+        agents,
+        activeAgentId: agents.some((a) => a.id === config.activeAgentId)
+          ? config.activeAgentId
+          : agents[0]?.id ?? '',
+      })
+      setPullMsg(
+        `Loaded ${pulled.length} agent${pulled.length === 1 ? '' : 's'} from your Claude account.`,
+      )
+    } catch (err) {
+      setPullErr(err instanceof Error ? err.message : 'Failed to load agents.')
+    } finally {
+      setPulling(false)
+    }
+  }
+
   const updateAgent = (id: string, patch: Partial<Agent>) =>
     set({ agents: config.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)) })
 
@@ -229,7 +272,19 @@ function AgentsSettings({ config, onChange }: WidgetSettingsProps<AgentsConfig>)
       </div>
 
       <div className="settings__divider" />
-      <h4 className="settings__section">Agents</h4>
+      <div className="agents__pullhead">
+        <h4 className="settings__section">Agents</h4>
+        <button
+          className="btn btn--sm"
+          onClick={() => void pullFromAccount()}
+          disabled={pulling}
+          title="Replace the list with the agents saved on your Claude account"
+        >
+          {pulling ? 'Loading…' : '⟲ Pull from my Claude account'}
+        </button>
+      </div>
+      {pullErr && <p className="widget__error settings__hint">{pullErr}</p>}
+      {pullMsg && <p className="settings__hint">{pullMsg}</p>}
 
       {config.agents.map((a) => (
         <div key={a.id} className="agentedit">
@@ -266,6 +321,13 @@ function AgentsSettings({ config, onChange }: WidgetSettingsProps<AgentsConfig>)
         Each agent is a name + a system prompt (its role). Pick one on the tile
         and send it a prompt; the reply streams live. Uses the Anthropic API key
         from <strong>Global settings</strong>.
+      </p>
+      <p className="settings__hint">
+        <strong>Pull from my Claude account</strong> lists the agents you've
+        saved via Anthropic's Managed Agents API and turns each into a persona
+        here (name + system prompt). It needs your Anthropic API key in Global
+        settings; if your account has no saved agents, or the browser can't
+        reach the beta endpoint, keep using the built-in agents above.
       </p>
     </div>
   )
