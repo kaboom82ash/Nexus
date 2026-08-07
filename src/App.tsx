@@ -13,10 +13,12 @@ import { TabBar } from './components/TabBar'
 import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
 import { GmailAuthBar } from './components/GmailAuthBar'
+import { GlobalSettings } from './components/GlobalSettings'
 
 export default function App() {
   const [state, setState] = useState<DashboardState>(() => loadState())
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -181,6 +183,13 @@ export default function App() {
             hidden
             onChange={onImportFile}
           />
+          <button
+            className="btn btn--sm"
+            onClick={() => setShowGlobalSettings(true)}
+            title="Global settings"
+          >
+            ⚙
+          </button>
         </div>
       </header>
 
@@ -200,6 +209,10 @@ export default function App() {
           onImport={(instance) => placeInstance(pickerIndex, instance)}
           onClose={() => setPickerIndex(null)}
         />
+      )}
+
+      {showGlobalSettings && (
+        <GlobalSettings onClose={() => setShowGlobalSettings(false)} />
       )}
     </div>
   )

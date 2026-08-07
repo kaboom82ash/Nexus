@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { defineWidget, type WidgetProps, type WidgetSettingsProps } from './types'
-import {
-  runPrompt,
-  isLlmMock,
-  getApiKey,
-  setApiKey,
-} from '../lib/llm'
+import { runPrompt, isLlmMock } from '../lib/llm'
 
 interface PromptConfig {
   prompt: string
@@ -112,8 +107,6 @@ function PromptBody({ config, title }: WidgetProps<PromptConfig>) {
 }
 
 function PromptSettings({ config, onChange }: WidgetSettingsProps<PromptConfig>) {
-  const [apiKey, setApiKeyInput] = useState(getApiKey())
-
   return (
     <div className="settings-body">
       <label className="field">
@@ -166,22 +159,10 @@ function PromptSettings({ config, onChange }: WidgetSettingsProps<PromptConfig>)
       </div>
 
       <div className="settings__divider" />
-
-      <label className="field">
-        <span>Anthropic API key (shared by all prompt tiles)</span>
-        <input
-          type="password"
-          placeholder="sk-ant-... (blank = demo mode)"
-          value={apiKey}
-          onChange={(e) => {
-            setApiKeyInput(e.target.value)
-            setApiKey(e.target.value)
-          }}
-        />
-      </label>
       <p className="settings__hint">
-        Stored only in this browser. Leave blank to run in demo mode. The key is
-        sent directly from your browser to Anthropic.
+        The <strong>Anthropic API key</strong> lives in{' '}
+        <strong>Global settings</strong> (the ⚙ in the top bar) — set once for
+        every AI Prompt widget. Blank = demo mode.
       </p>
     </div>
   )

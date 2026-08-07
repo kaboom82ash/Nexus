@@ -6,9 +6,6 @@ import {
   isMockMode,
   isConnected,
   connect,
-  disconnect,
-  getClientId,
-  setClientId,
   NeedsConnectError,
   type InboxStats,
 } from '../lib/gmail'
@@ -166,9 +163,6 @@ function GmailInboxBody({ config, title }: WidgetProps<GmailConfig>) {
 }
 
 function GmailInboxSettings({ config, onChange }: WidgetSettingsProps<GmailConfig>) {
-  const [clientId, setClientIdInput] = useState(getClientId())
-  const connected = isConnected()
-
   return (
     <div className="settings-body">
       <label className="field">
@@ -196,27 +190,9 @@ function GmailInboxSettings({ config, onChange }: WidgetSettingsProps<GmailConfi
       </label>
 
       <div className="settings__divider" />
-
-      <label className="field">
-        <span>Google OAuth Client ID (shared by all Gmail widgets)</span>
-        <input
-          type="text"
-          placeholder="xxxx.apps.googleusercontent.com (blank = sample data)"
-          value={clientId}
-          onChange={(e) => {
-            setClientIdInput(e.target.value)
-            setClientId(e.target.value) // applies globally on edit
-          }}
-        />
-      </label>
       <p className="settings__hint">
-        Leave blank for sample data. After saving a Client ID, close this and
-        click <strong>Connect Gmail</strong> on the tile once to grant access.{' '}
-        {connected ? (
-          <button className="btn btn--sm" onClick={() => disconnect()}>
-            Disconnect
-          </button>
-        ) : null}
+        Gmail sign-in &amp; Client ID live in <strong>Global settings</strong>{' '}
+        (the ⚙ in the top bar) — set once for every Gmail widget.
       </p>
     </div>
   )

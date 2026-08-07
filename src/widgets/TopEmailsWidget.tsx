@@ -10,9 +10,6 @@ import {
   isMockMode,
   isConnected,
   connect,
-  disconnect,
-  getClientId,
-  setClientId,
   NeedsConnectError,
   type EmailSummary,
   type InboxCounts,
@@ -485,10 +482,8 @@ function TopEmailsBody({ config, title }: WidgetProps<TopEmailsConfig>) {
 }
 
 function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsConfig>) {
-  const [clientId, setClientIdInput] = useState(getClientId())
   const [sendAuth, setSendAuth] = useState(isSendAuthorized())
   const [authError, setAuthError] = useState<string | null>(null)
-  const connected = isConnected()
   const set = (patch: Partial<TopEmailsConfig>) => onChange({ ...config, ...patch })
 
   const authorize = async () => {
@@ -641,26 +636,9 @@ function TopEmailsSettings({ config, onChange }: WidgetSettingsProps<TopEmailsCo
       )}
 
       <div className="settings__divider" />
-
-      <label className="field">
-        <span>Google OAuth Client ID (shared by all Gmail widgets)</span>
-        <input
-          type="text"
-          placeholder="xxxx.apps.googleusercontent.com (blank = sample data)"
-          value={clientId}
-          onChange={(e) => {
-            setClientIdInput(e.target.value)
-            setClientId(e.target.value)
-          }}
-        />
-      </label>
       <p className="settings__hint">
-        Leave blank for sample data.{' '}
-        {connected ? (
-          <button className="btn btn--sm" onClick={() => disconnect()}>
-            Disconnect
-          </button>
-        ) : null}
+        Gmail sign-in &amp; Client ID live in <strong>Global settings</strong>{' '}
+        (the ⚙ in the top bar) — set once for every Gmail widget.
       </p>
     </div>
   )
