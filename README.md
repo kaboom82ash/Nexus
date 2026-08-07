@@ -56,6 +56,25 @@ turn it off to open your mail app instead.
 - **Export / import the whole dashboard**: the header **Export** / **Import**
   buttons save and restore all tabs and tiles as a JSON file.
 
+## Run it as a desktop app
+
+**Install from the browser (PWA).** Open the site in Chrome/Edge and click the
+**Install** icon in the address bar (or ⋮ menu → *Install Nexus*). It then opens
+in its **own window** — no browser chrome — with its **own icon** in the
+taskbar/dock/launcher, and works offline for the app shell.
+
+**Native app with a system-tray icon (Electron).** For a true tray icon
+(show/hide, minimize-to-tray, quit), use the Electron shell in `desktop/`:
+
+```bash
+cd desktop
+npm install
+npm start          # opens the app + a tray icon
+npm run dist       # optional: build an installer in desktop/dist/
+```
+
+See `desktop/README.md` for details.
+
 ## Develop
 
 ```bash

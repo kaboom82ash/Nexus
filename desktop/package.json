@@ -1,0 +1,32 @@
+{
+  "name": "nexus-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop shell (Electron) for the Nexus dashboard, with a system-tray icon.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.7.6",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.nexus.dashboard",
+    "productName": "Nexus",
+    "files": ["main.js", "tray.png", "icon.png", "package.json"],
+    "mac": {
+      "icon": "icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "icon": "icon.png"
+    },
+    "linux": {
+      "icon": "icon.png",
+      "target": ["AppImage"],
+      "category": "Utility"
+    }
+  }
+}
