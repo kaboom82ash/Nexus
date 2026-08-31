@@ -75,6 +75,12 @@ interface TokenResponse {
   access_token?: string
   expires_in?: number
   error?: string
+  /**
+   * Space-separated scopes Google ACTUALLY granted. The consent screen has a
+   * checkbox per scope, so this can be a subset of what was asked for — and
+   * assuming otherwise is how a partial grant turns into a sign-in loop.
+   */
+  scope?: string
 }
 interface TokenError {
   type?: string
@@ -226,6 +232,7 @@ async function requestToken(
   scope: string,
   interactive: boolean,
   force = false,
+  forceConsent = false,
 ): Promise<string> {
   // A valid cached token satisfies everyone, silent or interactive.
   if (!force) {
@@ -237,7 +244,7 @@ async function requestToken(
     // Coalesce concurrent interactive requests into a single popup.
     const pending = interactiveInflight[scope]
     if (pending) return pending
-    const p = acquireToken(scope, true)
+    const p = acquireToken(scope, true, forceConsent)
     interactiveInflight[scope] = p
     // Clear on settle without creating an unhandled rejection.
     const clear = () => {
@@ -263,7 +270,11 @@ async function requestToken(
   return p
 }
 
-async function acquireToken(scope: string, interactive: boolean): Promise<string> {
+async function acquireToken(
+  scope: string,
+  interactive: boolean,
+  forceConsent = false,
+): Promise<string> {
   const clientId = getClientId()
   if (!clientId) throw new Error('No Google Client ID configured')
 
@@ -287,7 +298,24 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
         }
         const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
-        setScopeToken(scope, { token, expiresAt: Date.now() + ttl })
+        const expiresAt = Date.now() + ttl
+
+        // Cache against what was GRANTED, never what was requested. Caching a
+        // refused scope marks it authorized, its API then 403s, and the retry
+        // is served from that same bogus cache entry without ever reaching
+        // Google — a connect button that flickers "connected" and fails, for
+        // as long as the user keeps pressing it.
+        const asked = scope.split(' ').filter(Boolean)
+        const granted = (resp.scope ?? scope).split(' ').filter(Boolean)
+        for (const g of granted) setScopeToken(g, { token, expiresAt })
+        for (const a of asked) {
+          if (!granted.includes(a)) setScopeToken(a, null)
+        }
+        // The exact request key is only a valid cache entry if everything it
+        // asked for came back; otherwise a repeat request must reach Google.
+        if (asked.length > 1 && asked.every((a) => granted.includes(a))) {
+          setScopeToken(scope, { token, expiresAt })
+        }
         // Broadcast ONLY on an interactive sign-in so all widgets refresh once
         // after login. Silent/background refreshes must NOT broadcast, or they
         // can re-trigger loads in a loop.
@@ -312,7 +340,12 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
       timeoutMs,
     )
     try {
-      client.requestAccessToken({ prompt: interactive ? '' : 'none' })
+      // 'consent' re-opens the checkbox screen. Without it Google replays an
+      // existing partial grant with no UI, so a user retrying a refused scope
+      // is never actually asked for it again.
+      client.requestAccessToken({
+        prompt: interactive ? (forceConsent ? 'consent' : '') : 'none',
+      })
     } catch (e) {
       finish(() => reject(e instanceof Error ? e : new Error('Authorization failed')))
     }
@@ -348,24 +381,57 @@ export function requestScopeToken(
 export async function requestScopes(
   scopes: string[],
   interactive: boolean,
+  /** Re-open Google's checkbox screen instead of replaying an existing grant. */
+  forceConsent = false,
 ): Promise<string> {
   const unique = Array.from(new Set(scopes.filter(Boolean)))
   if (unique.length === 0) throw new Error('No scopes requested')
-  if (unique.length === 1) return requestToken(unique[0], interactive)
+  if (unique.length === 1) {
+    const only = await requestToken(unique[0], interactive, false, forceConsent)
+    if (validScopeToken(unique[0]) === null) {
+      throw new Error(
+        `access was not granted for ${scopeLabel(unique[0])} — reconnect and leave the permission ticked`,
+      )
+    }
+    announceGrant(unique, interactive)
+    startKeepAlive()
+    return only
+  }
 
   // Already covered individually? Then there is nothing to ask for.
   const cached = unique.map((s) => validScopeToken(s))
   if (cached.every((t) => t !== null)) return cached[0] as string
 
   const combined = unique.join(' ')
-  const token = await requestToken(combined, interactive)
-  const expiresAt = tokens[combined]?.expiresAt ?? Date.now() + 3_600_000
-  // The combined key stays cached alongside the per-scope copies so a repeat
-  // multi-scope request is a cache hit rather than another popup. Every entry
-  // holds the same token string, so revoking on disconnect still covers it.
-  for (const scope of unique) setScopeToken(scope, { token, expiresAt })
+  // acquireToken files the result against the granted scopes; all this needs
+  // to do is check what actually landed.
+  const token = await requestToken(combined, interactive, false, forceConsent)
 
-  if (interactive && typeof window !== 'undefined') {
+  const missing = unique.filter((s) => validScopeToken(s) === null)
+  if (missing.length) {
+    throw new Error(
+      `access was not granted for ${missing
+        .map(scopeLabel)
+        .join(' and ')} — reconnect and leave every permission ticked`,
+    )
+  }
+
+  announceGrant(unique, interactive)
+  startKeepAlive()
+  return token
+}
+
+/** Human name for a scope, for messages a person has to act on. */
+function scopeLabel(scope: string): string {
+  if (scope === GMAIL_SCOPE) return 'Gmail'
+  if (scope === GMAIL_SEND_SCOPE) return 'Gmail send'
+  if (scope.includes('calendar')) return 'Calendar'
+  return scope
+}
+
+function announceGrant(unique: string[], interactive: boolean): void {
+  if (!interactive || typeof window === 'undefined') return
+  {
     // The per-scope broadcast in acquireToken only fires for a bare
     // gmail.readonly request, so announce this one ourselves.
     if (unique.includes(GMAIL_SCOPE)) {
@@ -374,8 +440,6 @@ export async function requestScopes(
     // Fires for ANY scope, so indicators for non-Gmail services update too.
     window.dispatchEvent(new Event('nexus:google-token'))
   }
-  startKeepAlive()
-  return token
 }
 
 /** Whether a token for `scope` is already granted and unexpired. */

@@ -40,6 +40,7 @@ export function GoogleAuthBar() {
 
   const [state, setState] = useState(read)
   const [pending, setPending] = useState<Service | null>(null)
+  const [refused, setRefused] = useState<Service | null>(null)
   const mock = isMockMode()
 
   useEffect(() => {
@@ -62,9 +63,14 @@ export function GoogleAuthBar() {
     if (!target) return
     setPending(svc)
     try {
-      await requestScopes([target.scope], true)
+      // Re-asking for a service that was refused must force the consent
+      // screen; Google otherwise replays the partial grant with no UI, so the
+      // button looks broken.
+      await requestScopes([target.scope], true, refused === svc)
+      setRefused(null)
     } catch {
-      // The chip stays in its "connect" state, which is the whole message.
+      // requestScopes throws when the scope came back ungranted.
+      setRefused(svc)
     } finally {
       setPending(null)
       setState(read())
@@ -83,13 +89,17 @@ export function GoogleAuthBar() {
         return (
           <button
             key={svc.key}
-            className={`svc ${on ? 'svc--on' : 'svc--off'}`}
+            className={`svc ${
+              on ? 'svc--on' : refused === svc.key ? 'svc--refused' : 'svc--off'
+            }`}
             disabled={on || busy}
             onClick={() => connect(svc.key)}
             title={
               on
                 ? `${svc.label} connected (read-only)`
-                : `Connect ${svc.label} (read-only)`
+                : refused === svc.key
+                  ? `${svc.label} access was refused — click to be asked again`
+                  : `Connect ${svc.label} (read-only)`
             }
           >
             <span className="svc__icon" aria-hidden="true">

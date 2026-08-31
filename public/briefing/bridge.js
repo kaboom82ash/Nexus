@@ -1551,8 +1551,12 @@
         // The click's user activation reaches the same-origin parent, so the
         // consent popup opens there rather than being blocked in this frame.
         // Ask only for this service: the other may already be granted, and a
-        // partial grant should be repairable one service at a time.
-        bridge.connect(svc.key).then(function (next) {
+        // partial grant should be repairable one service at a time. Retrying
+        // one that already failed forces the consent screen open — otherwise
+        // Google replays the existing partial grant with no UI and the click
+        // appears to do nothing.
+        var retry = !!svcErrors[svc.key]
+        bridge.connect(svc.key, retry).then(function (next) {
           svcErrors[svc.key] = null
           renderChips(next)
           if (next.error) {

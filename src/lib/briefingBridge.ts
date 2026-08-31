@@ -98,7 +98,11 @@ export type BridgeService = 'all' | 'gmail' | 'calendar'
 export interface BriefingBridge {
   version: number
   status(): BridgeStatus
-  connect(which?: BridgeService): Promise<BridgeStatus & { error?: string }>
+  connect(
+    which?: BridgeService,
+    /** Re-open Google's consent screen rather than replaying a partial grant. */
+    forceConsent?: boolean,
+  ): Promise<BridgeStatus & { error?: string }>
   fetchMail(opts: {
     lookbackHours?: number
     limit?: number
@@ -131,7 +135,7 @@ const bridge: BriefingBridge = {
 
   status,
 
-  async connect(which: BridgeService = 'all') {
+  async connect(which: BridgeService = 'all', forceConsent = false) {
     if (isMockMode()) return status()
     const scopes =
       which === 'gmail'
@@ -142,7 +146,7 @@ const bridge: BriefingBridge = {
     try {
       // One popup for the scopes asked for. Called from a click inside the
       // iframe, whose user activation propagates to this same-origin parent.
-      await requestScopes(scopes, true)
+      await requestScopes(scopes, true, forceConsent)
       return status()
     } catch (err) {
       return { ...status(), error: message(err, 'Google sign-in failed') }

@@ -815,6 +815,13 @@ a.mailrow__main--link:hover .mailrow__subject {
   color: var(--text);
   border-color: var(--accent);
 }
+.svc--refused {
+  color: var(--text);
+  border-color: var(--danger);
+}
+.svc--refused .svc__state {
+  color: var(--danger);
+}
 .svc--off .svc__state {
   color: var(--accent-soft);
 }
