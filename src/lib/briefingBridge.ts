@@ -37,6 +37,9 @@ export interface BridgeStatus {
 
 export interface BridgeMailItem {
   id: string
+  /** The conversation this message belongs to — how a reply is matched to an
+   *  item that was closed before it arrived. */
+  threadId: string
   subject: string
   from: string
   date: string
@@ -244,6 +247,7 @@ const bridge: BriefingBridge = {
         mock: res.mock,
         items: res.emails.map((e) => ({
           id: e.id,
+          threadId: e.threadId,
           subject: e.subject,
           from: e.fromName || e.fromEmail,
           date: e.date,

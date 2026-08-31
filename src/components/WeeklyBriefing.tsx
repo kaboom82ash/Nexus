@@ -27,13 +27,15 @@ const BRIDGE_SRC = 'briefing/bridge.js'
 
 /** Add the theme and bridge to a briefing page that was rebuilt without them. */
 function ensureIntegration(doc: Document, base: string): void {
-  if (!doc.querySelector(`link[href$="${THEME_HREF}"]`)) {
+  // Contains, not ends-with: the published page carries a ?v=<hash> cache
+  // buster, so a suffix match would miss it and inject a duplicate.
+  if (!doc.querySelector(`link[href*="${THEME_HREF}"]`)) {
     const link = doc.createElement('link')
     link.rel = 'stylesheet'
     link.href = `${base}${THEME_HREF}`
     doc.head.appendChild(link)
   }
-  if (!doc.querySelector(`script[src$="${BRIDGE_SRC}"]`)) {
+  if (!doc.querySelector(`script[src*="${BRIDGE_SRC}"]`)) {
     const script = doc.createElement('script')
     script.src = `${base}${BRIDGE_SRC}`
     doc.body.appendChild(script)

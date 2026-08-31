@@ -272,6 +272,8 @@
   var svcErrors = {}
   /** Last synced payload, so punch-list-driven re-renders keep their numbers. */
   var lastData = { events: [], mail: [] }
+  /** punch-list id -> { threadId, date } for the mail it was made from. */
+  var mailMeta = {}
 
   // Styles live here rather than in the theme file so the bridge stays one
   // droppable file; every value is a page token, so it themes itself.
@@ -1561,6 +1563,84 @@
   }
 
 
+
+  // ---- a reply reopens what you closed ------------------------------------
+
+  /**
+   * Closing an item says "dealt with" — but a thread is only dealt with until
+   * the other side writes back. So a message arriving on a closed item's
+   * thread AFTER it was closed reopens it and puts it back in your court:
+   * that is precisely the moment it becomes yours again, and leaving it closed
+   * would bury the reply you were waiting for.
+   *
+   * Matching is by thread, not message: the reply is a different message id,
+   * so a message-level match could never see it.
+   */
+  function closedAtOf(entry) {
+    if (entry.doneTs) {
+      var t = Date.parse(entry.doneTs)
+      if (isFinite(t)) return t
+    }
+    if (entry.doneAt) {
+      // Older entries only carry a display date. Read it as end-of-day so a
+      // message from earlier the same day does not spuriously reopen it.
+      var d = new Date(entry.doneAt)
+      if (!isNaN(d.getTime())) return d.getTime() + 86399000
+    }
+    return 0
+  }
+
+  function reopenOnReply(bridge, mailItems) {
+    if (!mailItems || !mailItems.length) return []
+    var reopened = []
+    try {
+      // Newest arrival per thread is all that matters.
+      var newest = {}
+      mailItems.forEach(function (m) {
+        if (!m.threadId) return
+        var t = new Date(m.date).getTime()
+        if (!isFinite(t)) return
+        if (!newest[m.threadId] || t > newest[m.threadId].t) {
+          newest[m.threadId] = { t: t, m: m }
+        }
+      })
+
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || !e.done || !e.threadId) return
+        var hit = newest[e.threadId]
+        if (!hit || hit.t <= closedAtOf(e)) return
+
+        e.done = false
+        e.doneAt = null
+        e.doneTs = null
+        e.reopenedAt = new Date(hit.t).toISOString()
+        // Back in your court: a reply is waiting on you, not on them.
+        if (!STATE.status) STATE.status = {}
+        STATE.status[id] = 'court'
+        reopened.push({ id: id, title: e.title, from: hit.m.from })
+      })
+
+      if (reopened.length) {
+        persistPage()
+        if (typeof renderPunchList === 'function') renderPunchList()
+        applyClosed()
+      }
+    } catch (err) {}
+    return reopened
+  }
+
+  /** Remember which thread a live row came from, so closing can record it. */
+  function indexMail(items) {
+    ;(items || []).forEach(function (m) {
+      if (!m.id) return
+      mailMeta['sync-' + syncKey('mail', m.id)] = {
+        threadId: m.threadId || '',
+        date: m.date,
+      }
+    })
+  }
+
   // ---- close an item where it appears -------------------------------------
 
   /**
@@ -1598,6 +1678,10 @@
       }
       entry.done = true
       entry.doneAt = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      entry.doneTs = new Date().toISOString()
+      // Record the conversation so a later reply can find its way back here.
+      var meta = mailMeta[id]
+      if (meta && meta.threadId) entry.threadId = meta.threadId
       persistPage()
       if (typeof renderPunchList === 'function') renderPunchList()
       applyClosed()
@@ -2249,6 +2333,9 @@
       e.doneAt = done
         ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : null
+      e.doneTs = done ? new Date().toISOString() : null
+      var m2 = mailMeta[id]
+      if (done && m2 && m2.threadId) e.threadId = m2.threadId
       persistPage()
       if (typeof renderPunchList === 'function') renderPunchList()
       // Completion hides the item wherever it appears, so reopening has to
@@ -2520,6 +2607,9 @@
       '</select>' +
       (e.done ? '<span class="mon-chip mon-chip--done">done ' + esc(e.doneAt || '') + '</span>' : '') +
       (own.items[id] ? '<span class="mon-chip">yours</span>' : '') +
+      (e.reopenedAt && !e.done
+        ? '<span class="mon-chip mon-chip--wait">↩︎ reopened — new reply</span>'
+        : '') +
       '</div>' +
 
       (linksHtml ? '<div class="cat-links">' + linksHtml + '</div>' : '') +
@@ -2617,6 +2707,9 @@
         var newMail = diffNew(mailIds, seen.mail)
         var newEvents = diffNew(eventIds, seen.events)
 
+        indexMail(mailItems)
+        var reopened = reopenOnReply(bridge, mailItems)
+
         renderDaily(mailItems, mail.mock, newMail)
         renderEvents(eventItems, events.mock, newEvents)
         rewirePage()
@@ -2642,6 +2735,12 @@
         svcErrors.calendar = events.error || null
         renderChips(bridge.status())
 
+        // Folded into the final status line rather than set here: the
+        // success branch below runs after this and would overwrite it.
+        var reopenNote = reopened.length
+          ? ' · ↩︎ ' + reopened.length + ' reopened by a reply'
+          : ''
+
         var errors = []
         if (mail.error) errors.push('Gmail: ' + mail.error)
         if (events.error) errors.push('Calendar: ' + events.error)
@@ -2650,15 +2749,15 @@
           setStatus(errors.join(' · '), 'warn')
         } else if (mock) {
           setStatus(
-            'Sample data · ' + syncedAt() +
+            'Sample data · ' + syncedAt() + reopenNote +
               ' — add a Google Client ID in Nexus settings for live mail and calendar',
             'mock',
           )
         } else {
           setStatus(
             (mail.items || []).length + ' messages · ' +
-              (events.items || []).length + ' events · ' + syncedAt() + autoNote(),
-            'ok',
+              (events.items || []).length + ' events · ' + syncedAt() + autoNote() + reopenNote,
+            reopenNote ? 'mock' : 'ok',
           )
         }
       })
