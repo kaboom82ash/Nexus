@@ -479,6 +479,14 @@
     '.rank-days--soon{color:var(--critical)}',
     '.rank-title{flex:1;font-size:13px}',
     '.rank-when{color:var(--muted);font-size:11.5px}',
+
+    '.close-btn{font:inherit;font-size:11px;line-height:1;padding:2px 8px;margin-left:8px;',
+    'border-radius:6px;border:1px solid currentColor;background:rgba(0,0,0,.12);',
+    'color:inherit;cursor:pointer}',
+    '.close-btn:hover{background:rgba(0,0,0,.25)}',
+    // A closed item leaves the working view entirely. It is not deleted — it
+    // is a completed punch-list entry, reopenable from the tile there.
+    '.is-closed{display:none !important}',
     // Thread shape as the tile's headline: the numbers are the point.
     '.tstats{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 2px}',
     '.tstat__n{font-size:23px;font-weight:700;line-height:1.05}',
@@ -501,6 +509,7 @@
     '.gd-item .draft-body{border:1px solid var(--line);border-radius:8px;',
     'background:var(--surface-2);font-size:13px;padding:12px}',
 
+    '.prep-past{display:none !important}',
     '.prep-out{opacity:.4}',
     '.prep-out td{text-decoration:line-through}',
     '.prep-x{font:inherit;font-size:12px;line-height:1;padding:2px 7px;border-radius:6px;',
@@ -934,6 +943,7 @@
     pruneRegistry()
     try {
       if (typeof injectCheckables === 'function') injectCheckables()
+      applyClosed()
       if (typeof renderPunchList === 'function') renderPunchList()
       if (typeof renderDashboard === 'function') renderDashboard()
     } catch (e) {
@@ -1553,6 +1563,76 @@
     }).join('')
   }
 
+
+  // ---- close an item where it appears -------------------------------------
+
+  /**
+   * The page's contract is that checking a box QUEUES an item and completion
+   * happens on the punch list. That is right for triage, but it means a
+   * category row you have already dealt with keeps reappearing every sweep.
+   * So each checkable row gets a ✓ that completes it in place — recorded on
+   * the punch list, so the decision survives rebuilds and is undoable there.
+   */
+  function isClosed(id) {
+    try {
+      var e = STATE.punchlist[id]
+      return !!(e && e.done)
+    } catch (err) {
+      return false
+    }
+  }
+
+  function closeItem(bridge, id, el) {
+    try {
+      var entry = STATE.punchlist[id]
+      if (!entry) {
+        // Never queued: record it as a completed entry so it stays closed.
+        var data = (typeof ITEM_DATA === 'object' && ITEM_DATA[id]) || {}
+        entry = STATE.punchlist[id] = {
+          title: data.title || (el ? el.textContent.trim().slice(0, 80) : 'Item'),
+          category: data.category || 'personal',
+          severity: data.severity || 'low',
+          links: data.links || [],
+          done: false,
+          doneAt: null,
+          addedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          subs: [],
+        }
+      }
+      entry.done = true
+      entry.doneAt = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      persistPage()
+      if (typeof renderPunchList === 'function') renderPunchList()
+      applyClosed()
+      renderMonitor(bridge)
+      renderStats(lastData.events, lastData.mail)
+      renderTopActions(bridge)
+    } catch (err) {}
+  }
+
+  /** Add the ✓ control to every checkable row, and hide the closed ones. */
+  function applyClosed() {
+    var rows = document.querySelectorAll('main [data-check-id]')
+    Array.prototype.forEach.call(rows, function (row) {
+      var id = row.dataset.checkId
+      if (!row.querySelector('.close-btn') && !row.classList.contains('no-check')) {
+        var btn = el('button', 'close-btn', '✓')
+        btn.type = 'button'
+        btn.dataset.closeId = id
+        btn.title = 'Done — close this and stop it coming back'
+        var host = row.querySelector('.cat-links, .qa-strip, .cat-main') || row
+        if (row.tagName === 'TR') {
+          var td = document.createElement('td')
+          td.appendChild(btn)
+          row.appendChild(td)
+        } else {
+          host.appendChild(btn)
+        }
+      }
+      row.classList.toggle('is-closed', isClosed(id))
+    })
+  }
+
   // ---- 24/7 tab: today's mail, and what landed since you were last here ----
 
   var LAST_VISIT_KEY = 'ak-briefing-last-visit'
@@ -1707,14 +1787,33 @@
    * survives. A suggestion you have decided against should stop counting
    * toward the prep time you are being asked to find.
    */
+  /**
+   * A prep block for a meeting that has already happened is noise, and worse,
+   * it inflates the prep time you are being asked to find. The event date is
+   * in the row's own text ("Aug 27"), which is the only place it exists.
+   */
+  function prepIsPast(tr) {
+    var d = deadlineFrom(tr.textContent)
+    // deadlineFrom returns null for a date already gone, so no date parsed
+    // from a row that clearly carries one means it is behind us.
+    if (d) return false
+    return /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i
+      .test(tr.textContent)
+  }
+
   function wirePrepBlocks() {
     var tbody = document.getElementById('prep-tbody')
     if (!tbody) return
     var out = dismissedPrep()
 
+    // Drop elapsed blocks before anything is counted or wired.
+    Array.prototype.forEach.call(tbody.rows, function (tr) {
+      if (prepIsPast(tr)) tr.classList.add('prep-past')
+    })
+
     Array.prototype.forEach.call(tbody.rows, function (tr) {
       var cb = tr.querySelector('.prep-select')
-      if (!cb) return
+      if (!cb || tr.classList.contains('prep-past')) return
       var pid = cb.dataset.pid
       tr.dataset.prepId = pid
       if (out[pid]) tr.classList.add('prep-out')
@@ -1763,17 +1862,25 @@
     var kept = 0
     Array.prototype.forEach.call(tbody.rows, function (tr) {
       var cb = tr.querySelector('.prep-select')
-      if (!cb || out[tr.dataset.prepId]) return
+      if (!cb || out[tr.dataset.prepId] || tr.classList.contains('prep-past')) return
       var mins = parseInt(cb.dataset.mins, 10) || 0
       proposed += mins
       kept++
       if (cb.checked) selected += mins
     })
     var dropped = Object.keys(out).length
+    var past = document.querySelectorAll('#prep-tbody .prep-past').length
+    if (!kept) {
+      note.innerHTML = '<b>No prep blocks left to schedule</b>' +
+        (past ? ' — ' + past + ' were for meetings that have already happened' : '') +
+        (dropped ? (past ? ', and ' : ' — ') + dropped + ' dropped' : '') + '.'
+      return
+    }
     note.innerHTML =
       '<b>Prep suggested: ' + fmtHours(proposed / 60) + ' across ' + kept + ' block' +
       (kept === 1 ? '' : 's') + '</b> · selected ' + fmtHours(selected / 60) +
       (dropped ? ' · ' + dropped + ' dropped' : '') +
+      (past ? ' · ' + past + ' already past' : '') +
       ' — all proposed for <b>Monday</b>. Checking a row adds it to the punch list too; ✕ drops one you do not need.'
   }
 
@@ -1791,6 +1898,13 @@
   function renderCalendar(events) {
     var panel = document.getElementById('panel-calendar')
     if (!panel) return
+
+    // The prep section's subhead names the sweep's Monday, which is in the
+    // past by the time this page is being read.
+    var prepSub = panel.querySelector('.section-head .sub')
+    if (prepSub && /\b\d{1,2}:\d{2}\s*[AP]M\b/i.test(prepSub.textContent)) {
+      prepSub.textContent = 'Suggested prep blocks, proposed for Monday · nothing is added to your calendar automatically'
+    }
 
     // Hide the sweep-time week tables once, on first render.
     if (!panel.dataset.weeksHidden) {
@@ -2004,8 +2118,12 @@
         : null
       persistPage()
       if (typeof renderPunchList === 'function') renderPunchList()
+      // Completion hides the item wherever it appears, so reopening has to
+      // bring it back — without this, closing is a one-way door.
+      applyClosed()
       renderMonitor(bridge)
       renderStats(lastData.events, lastData.mail)
+      renderTopActions(bridge)
     } catch (err) {}
   }
 
@@ -2512,6 +2630,9 @@
     updateRangeUi()
 
     document.addEventListener('click', function (e) {
+      var close = e.target.closest('.close-btn')
+      if (close) { closeItem(bridge, close.dataset.closeId, close.closest('[data-check-id]')); return }
+
       var draft = e.target.closest('.live-draft')
       if (draft) {
         generateDraft(bridge, {

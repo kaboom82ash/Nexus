@@ -78,6 +78,18 @@ Calendar client built on the same OAuth layer. It adds:
 - a **Live calendar** section at the top of Calendar — the next 14 days across
   every calendar you have switched on, linked by the API's `htmlLink`.
 
+Every checkable row also carries a **✓ close** control. The page's own contract
+is that checking a box *queues* an item and completion happens on the punch
+list — right for triage, but it means a row you have already dealt with returns
+on every sweep. ✓ completes it in place, recorded as a done punch-list entry so
+the decision survives rebuilds and can be reopened from its tile.
+
+Anything already past is dropped: calendar events before now, prep blocks for
+meetings that have happened (which otherwise inflate the prep time you are
+being asked to find), and sweep-time headers naming a date gone by. Mail is not
+filtered this way — a week-old email can still need answering, so the lookback
+range governs it instead.
+
 Live rows are ordinary `.cat-row`s carrying `data-sync`, so the page's
 `injectCheckables()` treats them as first-class: same checkbox, same quick
 actions, same punch-list entry — and a stable sync key means a queued item
