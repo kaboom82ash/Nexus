@@ -273,6 +273,27 @@
   // Last error per service, so a granted-but-failing service (scope approved,
   // API disabled) reads as broken rather than as a reassuring tick.
   var svcErrors = {}
+
+  /**
+   * Why a service is failing decides what a retry should DO.
+   *
+   * A refused scope is fixed by asking Google again. An API that is not
+   * enabled on the Cloud project is not — consent was already given, the
+   * request fails downstream of it, and re-prompting cannot help. Forcing the
+   * consent screen for that case is a loop by construction: sign in, still
+   * 403, click, sign in again, forever. So config problems never reopen
+   * Google; they re-sync and keep saying what to go and fix.
+   */
+  function errorKind(msg) {
+    var text = String(msg || '')
+    if (/not enabled|has not been used in project|is disabled|Cloud project/i.test(text)) {
+      return 'config'
+    }
+    if (/not granted|insufficient|scope|not connected|reconnect/i.test(text)) {
+      return 'scope'
+    }
+    return 'other'
+  }
   /** Last synced payload, so punch-list-driven re-renders keep their numbers. */
   var lastData = { events: [], mail: [] }
   /** punch-list id -> { threadId, date } for the mail it was made from. */
@@ -835,7 +856,7 @@
       chip.className = 'live-chip live-chip--' + state
       chip.querySelector('.live-chip__state').textContent = {
         sample: 'sample',
-        err: '!',
+        err: errorKind(err) === 'config' ? 'setup' : '!',
         on: '✓',
         off: 'Connect',
       }[state]
@@ -844,7 +865,10 @@
       chip.disabled = state === 'sample' || state === 'on'
       chip.title = {
         sample: svc.label + ': sample data — no Google Client ID configured',
-        err: svc.label + ': ' + err + ' (click to retry access)',
+        err: svc.label + ': ' + err +
+          (errorKind(err) === 'config'
+            ? ' (signing in again will not help — fix it in Google Cloud, then click to re-check)'
+            : ' (click to be asked for access again)'),
         on: svc.label + ' connected (read-only) — keeping the ' + svc.what + ' up to date',
         off: 'Connect ' + svc.label + ' (read-only) to load your ' + svc.what,
       }[state]
@@ -3199,8 +3223,15 @@
         // one that already failed forces the consent screen open — otherwise
         // Google replays the existing partial grant with no UI and the click
         // appears to do nothing.
-        var retry = !!svcErrors[svc.key]
-        bridge.connect(svc.key, retry).then(function (next) {
+        var kind = errorKind(svcErrors[svc.key])
+        if (kind === 'config') {
+          // Nothing to authorize — re-check instead of reopening consent.
+          setStatus('Re-checking ' + svc.label + '…')
+          chips[svc.key].disabled = false
+          sync(bridge)
+          return
+        }
+        bridge.connect(svc.key, kind === 'scope').then(function (next) {
           svcErrors[svc.key] = null
           renderChips(next)
           if (next.error) {
