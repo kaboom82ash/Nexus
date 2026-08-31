@@ -38,7 +38,10 @@
   var MAX_CUSTOM_DAYS = 365
 
   var EVENT_DAYS = 14
-  var EVENT_LIMIT = 25
+  // Events are returned oldest-first, so a low limit does not "sample" the
+  // window — it truncates it at whatever day the count runs out, and every
+  // total derived from it is short. Match the client's own page cap instead.
+  var EVENT_LIMIT = 250
 
   // Once connected the page keeps itself current on its own. Polling pauses
   // while the tab is hidden — a background tab burning Gmail quota every few
@@ -548,6 +551,51 @@
     '.hrs-bar{flex:1;height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden}',
     '.hrs-fill{display:block;height:100%;background:var(--accent)}',
     '.hrs-val{flex:0 0 auto;color:var(--muted);font-size:11.5px}',
+    '.hrs-group{border-bottom:1px solid var(--line)}',
+    '.hrs-group:last-child{border-bottom:none}',
+    '.hrs-group>summary{list-style:none;cursor:pointer}',
+    '.hrs-group>summary::-webkit-details-marker{display:none}',
+    '.hrs-group>summary:hover .hrs-name{color:var(--accent)}',
+    '.hrs-count{flex:0 0 auto;font-size:11px;color:var(--muted);',
+    'border:1px solid var(--line);border-radius:999px;padding:0 6px}',
+    '.hrs-items{padding:2px 0 8px 8px}',
+    '.hrs-item{display:flex;gap:8px;align-items:baseline;font-size:11.5px;',
+    'padding:3px 0;text-decoration:none;color:var(--ink)}',
+    '.hrs-item:hover{color:var(--accent)}',
+    '.hrs-item__d{flex:0 0 96px;color:var(--muted)}',
+    '.hrs-item__t{flex:0 0 62px;color:var(--muted)}',
+    '.hrs-item__n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.hrs-item__h{flex:0 0 auto;color:var(--muted)}',
+
+    '.key-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));',
+    'gap:12px;margin-bottom:22px}',
+    '.key-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);',
+    'padding:12px 14px;border-top-width:3px}',
+    '.key-card--india{border-top-color:var(--cat-finance)}',
+    '.key-card--us{border-top-color:var(--medium)}',
+    '.key-card--birthday{border-top-color:var(--cat-kids)}',
+    '.key-card--evite{border-top-color:var(--cat-personal)}',
+    '.key-card__head{display:flex;align-items:center;gap:7px;font-size:12px;',
+    'font-weight:700;margin-bottom:9px}',
+    '.key-card__icon{font-size:15px}',
+    '.key-card__n{margin-left:auto;color:var(--muted);font-size:11px}',
+    '.key-row{display:flex;gap:8px;align-items:baseline;padding:4px 0;',
+    'text-decoration:none;color:var(--ink);font-size:12px}',
+    '.key-row:hover{color:var(--accent)}',
+    '.key-row__in{flex:0 0 42px;font-weight:700;color:var(--muted)}',
+    '.key-row__in--soon{color:var(--high)}',
+    '.key-row__t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.key-row__d{flex:0 0 auto;color:var(--muted);font-size:10.5px}',
+    '.key-more{color:var(--muted);font-size:11px;margin-top:5px}',
+
+    // Drive time is the one number on a logistics row you actually act on.
+    '.logi-drive{display:flex;align-items:baseline;gap:5px;flex-shrink:0;',
+    'padding-left:14px}',
+    '.logi-drive__n{font-size:30px;font-weight:700;line-height:1;color:var(--accent)}',
+    '.logi-drive__u{font-size:13px;font-weight:600;color:var(--accent)}',
+    '.logi-drive__l{font-size:10px;text-transform:uppercase;letter-spacing:.06em;',
+    'color:var(--muted)}',
+    '.logi-empty{padding:14px 16px}',
 
     '.wk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;',
     'margin-bottom:22px}',
@@ -808,10 +856,7 @@
         '</div>' +
         '<div class="cat-grid-items live-items"></div>' +
         '</div>'
-      // Mail leads its panel; the calendar's live list sits AFTER the prep
-      // blocks, the hours dashboard and the week ahead.
-      if (spec.id === 'live-calendar') panel.appendChild(section)
-      else panel.insertBefore(section, panel.firstChild)
+      panel.insertBefore(section, panel.firstChild)
     }
     return section.querySelector('.live-items')
   }
@@ -865,57 +910,6 @@
       (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
       link +
       '</div></div>'
-  }
-
-  function renderEvents(allItems, mock, newIds) {
-    var fresh = newIds || []
-    // Future only, and inside the stated horizon. The API is asked for exactly
-    // this window, but the promise on screen is "the next 14 days" — so it is
-    // enforced here rather than trusted to the server's timeMin/timeMax.
-    var now = Date.now()
-    var horizon = now + EVENT_DAYS * 86400000
-    var items = (allItems || []).filter(function (ev) {
-      var t = new Date(ev.start).getTime()
-      return isFinite(t) && t >= now && t <= horizon
-    })
-    var host = ensureSection({
-      panelId: 'panel-calendar',
-      id: 'live-calendar',
-      heading: 'Live calendar',
-      sub: 'Every event in the next ' + EVENT_DAYS +
-        ' days, across every calendar you have switched on · check one to queue it',
-      icon: '📅',
-      label: 'Next ' + EVENT_DAYS + ' days',
-      href: 'https://calendar.google.com/calendar/r',
-      linkLabel: '📅 Open Calendar ↗',
-    })
-    if (!host) return
-    if (!items.length) {
-      host.innerHTML = '<div class="cat-row no-check"><div class="cat-main"><div class="cat-meta">Nothing scheduled in the next ' + EVENT_DAYS + ' days.</div></div></div>'
-      return
-    }
-    var html = ''
-    items.forEach(function (e) {
-      var sev = eventSeverity(e.start)
-      var meta = [timeLabel(e.start, e.allDay), esc(e.location), esc(e.calendar)]
-        .filter(Boolean)
-        .join(' · ')
-      // The API's own htmlLink is the only reliable way back to an event;
-      // constructed event ids do not resolve, so the fallback is a day view.
-      var link = '<div class="cat-links"><a class="cal-btn" href="' + esc(eventHref(e)) +
-        '" target="_blank" rel="noopener">📅 Open event ↗</a></div>'
-      html +=
-        '<div class="cat-row sev-' + sev + '" data-sync="' + esc(syncKey('event', e.id)) + '">' +
-        '<div class="cat-main">' +
-        '<div class="cat-title">' + esc(e.title) + '</div>' +
-        '<div class="cat-meta">' + sevPill(sev) + ' ' +
-        (fresh.indexOf(e.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
-        (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
-        link +
-        '</div></div>'
-    })
-    host.innerHTML = html
-    setCount('live-calendar', items.length)
   }
 
   /**
@@ -1991,8 +1985,12 @@
 
   function renderPrepTotals() {
     var tbody = document.getElementById('prep-tbody')
-    var note = document.getElementById('prep-selected-note')
-    if (!tbody || !note) return
+    var noteEl = document.getElementById('prep-selected-note')
+    if (!tbody || !noteEl) return
+    // #prep-selected-note is a <b> inside the paragraph, and the rest of that
+    // paragraph is sweep-time prose with its own (now wrong) totals. Replace
+    // the paragraph, or the page's stale numbers sit right beside the live ones.
+    var note = noteEl.closest('p.note') || noteEl
     var out = dismissedPrep()
     var proposed = 0
     var selected = 0
@@ -2008,13 +2006,13 @@
     var dropped = Object.keys(out).length
     var past = document.querySelectorAll('#prep-tbody .prep-past').length
     if (!kept) {
-      note.innerHTML = '<b>No prep blocks left to schedule</b>' +
+      note.innerHTML = '<b id="prep-selected-note">No prep blocks left to schedule</b>' +
         (past ? ' — ' + past + ' were for meetings that have already happened' : '') +
         (dropped ? (past ? ', and ' : ' — ') + dropped + ' dropped' : '') + '.'
       return
     }
     note.innerHTML =
-      '<b>Prep suggested: ' + fmtHours(proposed / 60) + ' across ' + kept + ' block' +
+      '<b id="prep-selected-note">Prep suggested: ' + fmtHours(proposed / 60) + ' across ' + kept + ' block' +
       (kept === 1 ? '' : 's') + '</b> · selected ' + fmtHours(selected / 60) +
       (dropped ? ' · ' + dropped + ' dropped' : '') +
       (past ? ' · ' + past + ' already past' : '') +
@@ -2035,6 +2033,12 @@
   function renderCalendar(events) {
     var panel = document.getElementById('panel-calendar')
     if (!panel) return
+
+    // The approval callout describes a chat workflow that no longer exists —
+    // the page is operated here, not by replying to Claude.
+    Array.prototype.forEach.call(panel.querySelectorAll('.callout'), function (c) {
+      if (/nothing gets added automatically/i.test(c.textContent)) c.style.display = 'none'
+    })
 
     // The prep section's subhead names the sweep's Monday, which is in the
     // past by the time this page is being read.
@@ -2069,41 +2073,71 @@
       else panel.appendChild(host)
     }
 
-    host.innerHTML = hoursDashboardHtml(future) + weekAheadHtml(future)
+    host.innerHTML =
+      keyDatesHtml(events) + hoursDashboardHtml(future) + weekAheadHtml(future)
+    trimLogistics()
   }
 
+  /**
+   * Hours for the next 7 days, per calendar and per category, each row
+   * expandable to the meetings behind it — a total you cannot audit is a
+   * total you cannot trust, and "12h personal" is useless without knowing
+   * which twelve.
+   */
   function hoursDashboardHtml(events) {
     var weekEnd = Date.now() + 7 * 86400000
-    var inWeek = events.filter(function (ev) {
-      return new Date(ev.start).getTime() <= weekEnd
-    })
-    var byCal = {}
-    var byCat = {}
-    var total = 0
-    inWeek.forEach(function (ev) {
-      var h = hoursOf(ev)
-      total += h
-      byCal[ev.calendar || 'Calendar'] = (byCal[ev.calendar || 'Calendar'] || 0) + h
-      var c = eventCategory(ev)
-      byCat[c] = (byCat[c] || 0) + h
+    var inWeek = (events || []).filter(function (ev) {
+      var t = new Date(ev.start).getTime()
+      return isFinite(t) && t >= Date.now() && t <= weekEnd
     })
 
+    function group(keyFn) {
+      var map = {}
+      inWeek.forEach(function (ev) {
+        var k = keyFn(ev)
+        if (!map[k]) map[k] = { hours: 0, items: [] }
+        map[k].hours += hoursOf(ev)
+        map[k].items.push(ev)
+      })
+      return map
+    }
+
     function bars(map) {
-      var keys = Object.keys(map).sort(function (a, b) { return map[b] - map[a] })
+      var keys = Object.keys(map).sort(function (a, b) { return map[b].hours - map[a].hours })
       if (!keys.length) return '<div class="note">Nothing scheduled.</div>'
-      var max = map[keys[0]] || 1
+      var max = map[keys[0]].hours || 1
       return keys.map(function (k) {
-        return '<div class="hrs-row">' +
+        var g = map[k]
+        var rows = g.items
+          .slice()
+          .sort(function (a, b) { return a.start.localeCompare(b.start) })
+          .map(function (ev) {
+            return '<a class="hrs-item" href="' + esc(eventHref(ev)) + '" target="_blank" rel="noopener">' +
+              '<span class="hrs-item__d mono">' + esc(dayLabel(ev.start)) + '</span>' +
+              '<span class="hrs-item__t mono">' +
+              esc(ev.allDay ? 'all day' : new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) +
+              '</span>' +
+              '<span class="hrs-item__n">' + esc(ev.title) + '</span>' +
+              '<span class="hrs-item__h mono">' + esc(fmtHours(hoursOf(ev))) + '</span></a>'
+          }).join('')
+        return '<details class="hrs-group"><summary class="hrs-row">' +
           '<span class="hrs-name">' + esc(k) + '</span>' +
           '<span class="hrs-bar"><span class="hrs-fill" style="width:' +
-          Math.round((map[k] / max) * 100) + '%"></span></span>' +
-          '<span class="hrs-val mono">' + fmtHours(map[k]) + '</span></div>'
+          Math.round((g.hours / max) * 100) + '%"></span></span>' +
+          '<span class="hrs-val mono">' + fmtHours(g.hours) + '</span>' +
+          '<span class="hrs-count mono">' + g.items.length + '</span>' +
+          '</summary><div class="hrs-items">' + rows + '</div></details>'
       }).join('')
     }
 
+    var byCal = group(function (ev) { return ev.calendar || 'Calendar' })
+    var byCat = group(eventCategory)
+    var total = inWeek.reduce(function (n, ev) { return n + hoursOf(ev) }, 0)
+
     return (
       '<div class="section-head"><h2>Hours ahead</h2>' +
-      '<span class="sub">Next 7 days · ' + fmtHours(total) + ' scheduled in total</span></div>' +
+      '<span class="sub">Next 7 days · ' + fmtHours(total) + ' across ' + inWeek.length +
+      ' events · click any row to see what makes it up</span></div>' +
       '<div class="hrs-grid">' +
       '<div class="hrs-card"><div class="hrs-card__head">Per calendar</div>' + bars(byCal) + '</div>' +
       '<div class="hrs-card"><div class="hrs-card__head">Per category</div>' + bars(byCat) + '</div>' +
@@ -2167,6 +2201,152 @@
       '<div class="week-grid-wrap"><table class="week-grid wk-table no-check">' +
       '<thead>' + header + '</thead><tbody>' + body + '</tbody></table></div>'
     )
+  }
+
+
+
+  /**
+   * Logistics rows are written at sweep time and carry their date as text
+   * ("Tue, Aug 25"). Anywhere you needed to be last week is not logistics any
+   * more, and the drive time — the only number here you act on — is buried in
+   * a muted line, so it is pulled out.
+   */
+  function trimLogistics() {
+    var rows = document.querySelectorAll('.logi-row')
+    if (!rows.length) return
+    Array.prototype.forEach.call(rows, function (row) {
+      var dayEl = row.querySelector('.logi-day')
+      var text = dayEl ? dayEl.textContent : ''
+      // Only a row that CARRIES a date can be past. Rows labelled "Recurring"
+      // have none and are ongoing, so treating "no future date" as "past"
+      // would delete exactly the standing commitments worth keeping.
+      var dated = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b/i
+        .test(text)
+      if (dated && !deadlineFrom(text)) {
+        row.style.display = 'none'
+        return
+      }
+      row.style.display = ''
+      if (row.dataset.logiDone) return
+      row.dataset.logiDone = '1'
+
+      var addr = row.querySelector('.logi-addr')
+      if (!addr) return
+      var m = /~?\s*(\d+)\s*(min|minutes|hr|hour|hours)\b([^·<]*)/i.exec(addr.textContent)
+      if (!m) return
+      var chip = el('div', 'logi-drive')
+      chip.innerHTML = '<span class="logi-drive__n mono">' + esc(m[1]) + '</span>' +
+        '<span class="logi-drive__u">' + esc(/hr|hour/i.test(m[2]) ? 'hours' : 'min') + '</span>' +
+        '<span class="logi-drive__l">drive</span>'
+      var main = row.querySelector('.logi-main') || row
+      main.parentNode.insertBefore(chip, main.nextSibling)
+    })
+
+    var wrap = document.querySelector('.logi-wrap')
+    var anyLeft = Array.prototype.some.call(
+      document.querySelectorAll('.logi-row'),
+      function (r) { return r.style.display !== 'none' },
+    )
+    if (wrap && !anyLeft) {
+      var note = wrap.querySelector('.logi-empty')
+      if (!note) {
+        note = el('div', 'logi-empty note')
+        note.textContent = 'Nothing left this week — every logged stop has already happened.'
+        wrap.appendChild(note)
+      }
+    }
+  }
+
+  // ---- key dates: holidays, birthdays, invitations ------------------------
+
+  var KEY_KINDS = [
+    { key: 'india', icon: '🇮🇳', label: 'Indian holidays',
+      cal: /holidays?\s+in\s+india|indian?\s+holiday/i,
+      title: /\b(diwali|deepavali|holi|raksha|navratri|dussehra|dasara|onam|pongal|baisakhi|ganesh|janmashtami|eid|gurpurab|republic day|independence day \(india\)|karwa)\b/i },
+    { key: 'us', icon: '🇺🇸', label: 'US holidays',
+      cal: /holidays?\s+in\s+(the\s+)?united states|us\s+holiday/i,
+      title: /\b(thanksgiving|christmas|new year|independence day|labor day|memorial day|veterans day|columbus day|juneteenth|presidents|martin luther king|halloween)\b/i },
+    { key: 'birthday', icon: '🎂', label: 'Birthdays',
+      cal: /birthday/i, title: /\bbirthday\b|\bb-?day\b/i },
+    { key: 'evite', icon: '💌', label: 'Invitations',
+      cal: /(^|\s)invit/i,
+      title: /\b(evite|rsvp|invitation|invite|party|wedding|shower|graduation|reception|anniversary|reunion)\b/i },
+  ]
+
+  function keyKindOf(ev) {
+    var cal = ev.calendar || ''
+    var title = ev.title || ''
+    for (var i = 0; i < KEY_KINDS.length; i++) {
+      // The calendar it lives on is the stronger signal — Google's own
+      // holiday and birthday calendars are named exactly this way — so it is
+      // checked first, and title matching is the fallback for events sitting
+      // on a personal calendar.
+      if (KEY_KINDS[i].cal.test(cal)) return KEY_KINDS[i]
+    }
+    for (var j = 0; j < KEY_KINDS.length; j++) {
+      if (KEY_KINDS[j].title.test(title)) return KEY_KINDS[j]
+    }
+    return null
+  }
+
+  function dayLabel(iso) {
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  }
+
+  function daysAway(iso) {
+    var d = new Date(iso)
+    var start = new Date()
+    start.setHours(0, 0, 0, 0)
+    return Math.max(0, Math.round((d.getTime() - start.getTime()) / 86400000))
+  }
+
+  /**
+   * Dates that matter but never appear in a to-do list — holidays, birthdays,
+   * invitations. They are easy to miss precisely because nothing is asked of
+   * you until suddenly it is, so they lead the calendar tab. Looks further
+   * ahead than the working horizon, since a birthday four weeks out is still
+   * worth knowing about today.
+   */
+  var KEY_DATES_DAYS = 60
+
+  function keyDatesHtml(events) {
+    var now = Date.now()
+    var horizon = now + KEY_DATES_DAYS * 86400000
+    var groups = {}
+    ;(events || []).forEach(function (ev) {
+      var t = new Date(ev.start).getTime()
+      if (!isFinite(t) || t < now - 86400000 || t > horizon) return
+      var kind = keyKindOf(ev)
+      if (!kind) return
+      ;(groups[kind.key] = groups[kind.key] || []).push(ev)
+    })
+
+    var shown = KEY_KINDS.filter(function (k) { return groups[k.key] && groups[k.key].length })
+    if (!shown.length) return ''
+
+    return '<div class="section-head"><h2>⭐ Key dates ahead</h2>' +
+      '<span class="sub">Holidays, birthdays and invitations in the next ' +
+      KEY_DATES_DAYS + ' days — nothing asks anything of you until it does</span></div>' +
+      '<div class="key-grid">' +
+      shown.map(function (k) {
+        var list = groups[k.key].sort(function (a, b) { return a.start.localeCompare(b.start) })
+        return '<div class="key-card key-card--' + k.key + '">' +
+          '<div class="key-card__head"><span class="key-card__icon">' + k.icon + '</span>' +
+          esc(k.label) + '<span class="key-card__n mono">' + list.length + '</span></div>' +
+          list.slice(0, 6).map(function (ev) {
+            var away = daysAway(ev.start)
+            return '<a class="key-row" href="' + esc(eventHref(ev)) + '" target="_blank" rel="noopener">' +
+              '<span class="key-row__in mono' + (away <= 7 ? ' key-row__in--soon' : '') + '">' +
+              (away === 0 ? 'today' : away + 'd') + '</span>' +
+              '<span class="key-row__t">' + esc(ev.title) + '</span>' +
+              '<span class="key-row__d mono">' + esc(dayLabel(ev.start)) + '</span></a>'
+          }).join('') +
+          (list.length > 6 ? '<div class="key-more">+' + (list.length - 6) + ' more</div>' : '') +
+          '</div>'
+      }).join('') +
+      '</div>'
   }
 
   // ---- Monitor tab: filters, thread timelines, history --------------------
@@ -2711,7 +2891,6 @@
         var reopened = reopenOnReply(bridge, mailItems)
 
         renderDaily(mailItems, mail.mock, newMail)
-        renderEvents(eventItems, events.mock, newEvents)
         rewirePage()
         lastData = { events: eventItems, mail: mailItems }
         renderCalendar(eventItems)
