@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - claude/live-dashboard-widgets-24mazs
+      - claude/weekly-briefing-homepage-a0o51r
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 

@@ -1,9 +1,26 @@
 # Nexus Dashboard
 
-A tab-based dashboard of live-feed **widgets**. Each tab is a page holding a
-**5 × 5 grid of 25 tiles**; add more tabs whenever you need more room. Drop a
-widget into any empty tile, remove it with the ✕, and everything persists to
-your browser's `localStorage`.
+Nexus opens on the **Weekly Briefing** — a chief-of-staff console for the week —
+with tab-based dashboards of live-feed **widgets** beside it.
+
+## Homepage: the Weekly Briefing
+
+The pinned first tab is the [Weekly Briefing](weekly-briefing/README.md): one
+self-contained page fusing a Gmail sweep and a Google Calendar sweep into a
+punch list, deadline-ranked actions, a category inbox, a 14-day calendar grid,
+draft replies, and a reference vault. Checking any item queues it to the punch
+list, which persists in your browser across weekly rebuilds.
+
+It is served verbatim from `public/weekly-briefing.html` and mounted in an
+iframe by `src/components/WeeklyBriefing.tsx`, so its own styles and script stay
+isolated from the app shell — and refreshing the week's content is a file swap,
+not a code change. The homepage cannot be renamed or removed.
+
+## Tile dashboards
+
+Every other tab is a page holding a **5 × 5 grid of 25 tiles**; add more tabs
+whenever you need more room. Drop a widget into any empty tile, remove it with
+the ✕, and everything persists to your browser's `localStorage`.
 
 ## First widget: Gmail Inbox
 
@@ -90,15 +107,22 @@ Widgets are self-contained and registered in one place, so adding a new one is
 a small, isolated change:
 
 ```
+public/
+  weekly-briefing.html  # the homepage, served as-is (swap it to refresh the week)
+weekly-briefing/        # the briefing's spec, sample data, and architecture notes
 src/
   lib/          # types, storage, id, Gmail client
   widgets/
     types.ts        # WidgetDefinition / props contract
     registry.ts     # <-- add new widgets here
     GmailInboxWidget.tsx
-  components/    # TabBar, DashboardGrid, Tile, WidgetPicker, Modal
-  App.tsx        # tab + tile state, persistence
+  components/    # TabBar, DashboardGrid, Tile, WidgetPicker, Modal, WeeklyBriefing
+  App.tsx        # active view (homepage or a tab) + tile state, persistence
 ```
+
+The active view is one field — `activeTabId` in the saved state — which is
+either a tab id or the reserved `HOME_TAB_ID`, so the homepage costs the tile
+code nothing.
 
 ### Adding a widget
 

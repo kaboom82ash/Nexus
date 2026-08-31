@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DashboardState, TileCustom, WidgetInstance } from './lib/types'
+import { HOME_TAB_ID } from './lib/types'
 import {
   loadState,
   saveState,
@@ -14,6 +15,7 @@ import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
 import { GmailAuthBar } from './components/GmailAuthBar'
 import { GlobalSettings } from './components/GlobalSettings'
+import { WeeklyBriefing } from './components/WeeklyBriefing'
 
 export default function App() {
   const [state, setState] = useState<DashboardState>(() => loadState())
@@ -25,8 +27,11 @@ export default function App() {
     saveState(state)
   }, [state])
 
+  const onHome = state.activeTabId === HOME_TAB_ID
+
+  // Only meaningful when a tile tab is active; the homepage has no tiles.
   const activeTab = useMemo(
-    () => state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0],
+    () => state.tabs.find((t) => t.id === state.activeTabId) ?? null,
     [state],
   )
 
@@ -36,15 +41,14 @@ export default function App() {
   const addTab = () =>
     setState((s) => {
       const tab = makeTab(`Dashboard ${s.tabs.length + 1}`)
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id }
+      return { ...s, tabs: [...s.tabs, tab], activeTabId: tab.id }
     })
 
   const removeTab = (id: string) =>
     setState((s) => {
-      if (s.tabs.length <= 1) return s
       const tabs = s.tabs.filter((t) => t.id !== id)
-      const activeTabId = s.activeTabId === id ? tabs[0].id : s.activeTabId
-      return { tabs, activeTabId }
+      const activeTabId = s.activeTabId === id ? HOME_TAB_ID : s.activeTabId
+      return { ...s, tabs, activeTabId }
     })
 
   const renameTab = (id: string, name: string) =>
@@ -144,7 +148,7 @@ export default function App() {
     reader.readAsText(file)
   }
 
-  const filledCount = activeTab.tiles.filter(Boolean).length
+  const filledCount = activeTab ? activeTab.tiles.filter(Boolean).length : 0
 
   return (
     <div className="app">
@@ -163,9 +167,11 @@ export default function App() {
         />
         <div className="app__meta">
           <GmailAuthBar />
-          <span className="app__count">
-            {filledCount}/{activeTab.tiles.length} tiles
-          </span>
+          {activeTab && (
+            <span className="app__count">
+              {filledCount}/{activeTab.tiles.length} tiles
+            </span>
+          )}
           <button className="btn btn--sm" onClick={doExport} title="Export dashboard">
             Export
           </button>
@@ -193,14 +199,18 @@ export default function App() {
         </div>
       </header>
 
-      <main className="app__main">
-        <DashboardGrid
-          tab={activeTab}
-          onAdd={(index) => setPickerIndex(index)}
-          onRemove={removeWidget}
-          onUpdate={updateTile}
-          onMove={moveWidget}
-        />
+      <main className={`app__main ${onHome ? 'app__main--home' : ''}`}>
+        {onHome || !activeTab ? (
+          <WeeklyBriefing />
+        ) : (
+          <DashboardGrid
+            tab={activeTab}
+            onAdd={(index) => setPickerIndex(index)}
+            onRemove={removeWidget}
+            onUpdate={updateTile}
+            onMove={moveWidget}
+          />
+        )}
       </main>
 
       {pickerIndex !== null && (
