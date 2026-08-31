@@ -11,6 +11,8 @@
  */
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
+/** Public alias — other modules compose scope sets from this. */
+export const GMAIL_READONLY_SCOPE = GMAIL_SCOPE
 const CLIENT_ID_KEY = 'nexus.google.clientId'
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 
@@ -320,6 +322,66 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
 /** Read-only Gmail access token (inbox reading widgets). */
 function getAccessToken(interactive: boolean): Promise<string> {
   return requestToken(GMAIL_SCOPE, interactive)
+}
+
+/**
+ * Access token for any Google scope, using the same client id, GIS loader,
+ * token cache and request de-duplication as Gmail. Other Google clients in
+ * this app (see `lib/calendar.ts`) build on this rather than standing up a
+ * second OAuth layer, so one sign-in serves every scope the user has granted.
+ */
+export function requestScopeToken(
+  scope: string,
+  interactive: boolean,
+): Promise<string> {
+  return requestToken(scope, interactive)
+}
+
+/**
+ * Request ONE token covering several scopes, then cache it under each scope
+ * individually. Google issues a single token for a space-separated scope
+ * string, so this is one consent popup instead of one per scope — and because
+ * the result is mirrored into each per-scope cache slot, code that only knows
+ * about `gmail.readonly` (the widgets, the auth bar) sees itself as connected
+ * straight away.
+ */
+export async function requestScopes(
+  scopes: string[],
+  interactive: boolean,
+): Promise<string> {
+  const unique = Array.from(new Set(scopes.filter(Boolean)))
+  if (unique.length === 0) throw new Error('No scopes requested')
+  if (unique.length === 1) return requestToken(unique[0], interactive)
+
+  // Already covered individually? Then there is nothing to ask for.
+  const cached = unique.map((s) => validScopeToken(s))
+  if (cached.every((t) => t !== null)) return cached[0] as string
+
+  const combined = unique.join(' ')
+  const token = await requestToken(combined, interactive)
+  const expiresAt = tokens[combined]?.expiresAt ?? Date.now() + 3_600_000
+  // The combined key stays cached alongside the per-scope copies so a repeat
+  // multi-scope request is a cache hit rather than another popup. Every entry
+  // holds the same token string, so revoking on disconnect still covers it.
+  for (const scope of unique) setScopeToken(scope, { token, expiresAt })
+
+  if (interactive && unique.includes(GMAIL_SCOPE) && typeof window !== 'undefined') {
+    // The per-scope broadcast in acquireToken only fires for a bare
+    // gmail.readonly request, so announce this one ourselves.
+    window.dispatchEvent(new Event('nexus:gmail-token'))
+  }
+  startKeepAlive()
+  return token
+}
+
+/** Whether a token for `scope` is already granted and unexpired. */
+export function isScopeAuthorized(scope: string): boolean {
+  return validScopeToken(scope) !== null
+}
+
+/** Drop a cached token — used when the API answers 401 for that scope. */
+export function clearScopeToken(scope: string): void {
+  setScopeToken(scope, null)
 }
 
 export function isConnected(): boolean {

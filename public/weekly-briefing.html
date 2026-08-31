@@ -1028,6 +1028,16 @@ meant to be lifted into another app.
   .logi-wrap { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
 </style>
 
+<!-- Nexus integration. Both files live in public/briefing/ and are additive:
+     theme.css re-declares this page's palette tokens as the app's, and
+     bridge.js adds live Gmail + Calendar data when the page runs inside Nexus.
+     Opened standalone the bridge disables itself and the briefing is unchanged.
+     RE-ADD THESE TWO LINES after a weekly rebuild overwrites this file —
+     src/components/WeeklyBriefing.tsx also injects them if they are missing,
+     so forgetting costs a flash of the original theme, not the integration. -->
+<link rel="stylesheet" href="briefing/theme.css">
+<script src="briefing/bridge.js" defer></script>
+
 <div class="masthead">
   <div class="masthead-top">
     <div>

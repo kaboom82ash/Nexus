@@ -132,7 +132,9 @@ button {
   min-height: 0;
   width: 100%;
   border: none;
-  background: #fff;
+  /* Matches the briefing's themed ground so the frame never flashes white
+     between navigation and first paint. */
+  background: var(--bg);
 }
 
 /* ---------- Tab bar ---------- */

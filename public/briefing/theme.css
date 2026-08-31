@@ -1,0 +1,67 @@
+/*
+ * Nexus theme for the Weekly Briefing.
+ *
+ * The briefing page tokenizes its entire palette, so re-declaring those tokens
+ * is enough to restyle it — no rules here touch the page's own selectors, and
+ * nothing here needs to change when the briefing is rebuilt week to week.
+ *
+ * Specificity note: the page defines its dark palette under
+ * `:root:not([data-theme="light"])` and `:root[data-theme="dark"]`, both at
+ * (0,2,0). `:root:root` matches that weight, and this file loads after the
+ * page's inline <style>, so it wins on source order in every combination of
+ * OS light/dark and explicit data-theme.
+ */
+
+:root:root {
+  /* Nexus shell palette (see src/index.css) */
+  --bg: #0b0d12;
+  --surface: #141821;
+  --surface-2: #1b2130;
+  --ink: #e6e9ef;
+  --muted: #9aa3b2;
+  --line: #262d3d;
+  --accent: #6366f1;
+  --accent-ink: #ffffff;
+
+  /* Severity stays a separate hue family from the indigo brand accent, so a
+     status never reads as "branded" — the briefing's original design rule,
+     re-tuned for Nexus's near-black ground. */
+  --critical: #f87171;
+  --critical-bg: #2c1519;
+  --high: #f0a742;
+  --high-bg: #2e2011;
+  --medium: #5eb0e5;
+  --medium-bg: #12212e;
+  --low: #5ec98a;
+  --low-bg: #12261b;
+
+  /* Category accents, lifted for legibility on the dark ground. Home moves off
+     teal now that it no longer has to avoid a teal brand accent. */
+  --cat-personal: #a78bfa;
+  --cat-kids: #f472b6;
+  --cat-home: #2dd4bf;
+  --cat-finance: #e0a33e;
+  --cat-health: #6ee7a8;
+  --cat-lifestyle: #60a5fa;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -14px rgba(0, 0, 0, 0.75);
+  color-scheme: dark;
+}
+
+/* Running text adopts the Nexus system stack so the briefing reads as part of
+   the app; the Fraunces display face and the IBM Plex Mono data tokens are the
+   briefing's own voice and stay. */
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+}
+
+/* Form controls default to the light-mode UA palette inside an iframe unless
+   told otherwise; the page's own checkboxes are the main affordance here. */
+input,
+button,
+select,
+textarea {
+  color-scheme: dark;
+  accent-color: var(--accent);
+}

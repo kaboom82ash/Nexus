@@ -16,6 +16,24 @@ iframe by `src/components/WeeklyBriefing.tsx`, so its own styles and script stay
 isolated from the app shell — and refreshing the week's content is a file swap,
 not a code change. The homepage cannot be renamed or removed.
 
+Two files in `public/briefing/` adapt the page to the app without touching its
+content, so a weekly rebuild does not disturb either:
+
+- **`theme.css`** restates the briefing's palette tokens as Nexus's, so it
+  wears the app's dark theme. The page tokenizes every color, so this is
+  variables only — no rule here targets its markup.
+- **`bridge.js`** gives it **live Gmail and Calendar data**. A *Live data* strip
+  under the masthead connects Google and syncs; a **Live inbox** section leads
+  the Actions tab and a **Live calendar** section leads the Calendar tab. Live
+  items are rendered in the page's own markup vocabulary, so they get the same
+  checkbox as swept items and **queue to the punch list identically**.
+
+Live data uses the dashboard's existing Google client: one consent covers
+`gmail.readonly` and `calendar.readonly` together, and the session is shared
+with every widget — connect in the briefing and the Gmail tiles are connected
+too. Without a Client ID configured everything runs on sample data, and opened
+as a standalone file the page says so and behaves exactly as it always did.
+
 ## Tile dashboards
 
 Every other tab is a page holding a **5 × 5 grid of 25 tiles**; add more tabs
@@ -40,8 +58,10 @@ Shows **how many new emails** landed in your inbox over a time window (default
    **OAuth 2.0 Client ID** of type **Web application**.
 2. Under **Authorized JavaScript origins**, add the origin you serve this app
    from (e.g. `http://localhost:5173` for local dev).
-3. Enable the **Gmail API** for the project, and add the `gmail.readonly`
-   scope on the OAuth consent screen.
+3. Enable the **Gmail API** and the **Google Calendar API** for the project,
+   and add the `gmail.readonly` and `calendar.readonly` scopes on the OAuth
+   consent screen. (Calendar powers the homepage's live calendar; leave it off
+   and the rest still works.)
 4. Put the Client ID in `.env` as `VITE_GOOGLE_CLIENT_ID`, or paste it into the
    widget's ⚙ settings at runtime.
 
@@ -109,9 +129,12 @@ a small, isolated change:
 ```
 public/
   weekly-briefing.html  # the homepage, served as-is (swap it to refresh the week)
+  briefing/
+    theme.css           # restates the page's palette tokens as the app's
+    bridge.js           # live Gmail + Calendar inside the page
 weekly-briefing/        # the briefing's spec, sample data, and architecture notes
 src/
-  lib/          # types, storage, id, Gmail client
+  lib/          # types, storage, id, Gmail + Calendar clients, briefing bridge
   widgets/
     types.ts        # WidgetDefinition / props contract
     registry.ts     # <-- add new widgets here
@@ -123,6 +146,13 @@ src/
 The active view is one field — `activeTabId` in the saved state — which is
 either a tab id or the reserved `HOME_TAB_ID`, so the homepage costs the tile
 code nothing.
+
+`lib/calendar.ts` is built on `lib/gmail.ts`'s OAuth layer rather than its own:
+`requestScopeToken` shares the client id, the GIS loader and the token cache,
+and `requestScopes` gets one token for several scopes and files it under each,
+so adding a Google API is a REST client, not a second sign-in.
+`lib/briefingBridge.ts` publishes those two clients on `window.__nexusBriefing`
+for the briefing page to call — see the comment there for the contract.
 
 ### Adding a widget
 

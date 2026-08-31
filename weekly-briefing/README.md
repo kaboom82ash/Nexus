@@ -12,7 +12,10 @@ dashboards are tabs beside it.
 
 ```
 public/
-└── weekly-briefing.html          # The complete working page — served as-is, mounted by the app
+├── weekly-briefing.html          # The complete working page — served as-is, mounted by the app
+└── briefing/
+    ├── theme.css                 # Restates the page's palette tokens as the Nexus theme
+    └── bridge.js                 # Live Gmail + Calendar data inside the page
 weekly-briefing/
 ├── prompts/
 │   └── Weekly_Briefing_Master_Prompt.md   # Full build spec: rules, tab structure, info-flow, quality checklist
@@ -39,6 +42,37 @@ isolated from the dashboard shell.
   browser. There is no artifact runtime here, so the page's "saved on this
   device only" path is the one that runs.
 
+Two files in `public/briefing/` adapt the page without editing its content —
+both are linked from the page's head and both are additive, so the page still
+works standalone and a weekly rebuild does not disturb them:
+
+**`theme.css`** — the page tokenizes its whole palette, so restating those
+tokens is the entire theme. Nothing here targets the page's markup.
+
+**`bridge.js`** — live Gmail and Calendar. The page runs in a same-origin
+iframe, so it calls up to `window.__nexusBriefing` on the parent
+(`src/lib/briefingBridge.ts`), which fronts the app's Gmail client and the
+Calendar client built on the same OAuth layer. It adds:
+
+- a **Live data** strip under the masthead: connect, sync, and status;
+- a **Live inbox** section at the top of Actions & Inbox — the top messages of
+  the last 72 hours, ranked by the dashboard's own priority score;
+- a **Live calendar** section at the top of Calendar — the next 14 days across
+  every calendar you have switched on, linked by the API's `htmlLink`.
+
+Live rows are ordinary `.cat-row`s carrying `data-sync`, so the page's
+`injectCheckables()` treats them as first-class: same checkbox, same quick
+actions, same punch-list entry — and a stable sync key means a queued item
+keeps its entry across syncs. They deliberately carry **no `data-cat`**: the
+punch list only renders categories in its own fixed `CATEGORIES` list, so
+letting the page's `inferCategory()` classify them is what keeps a queued item
+from vanishing.
+
+One consent covers `gmail.readonly` and `calendar.readonly`, and the session is
+shared with every dashboard widget. With no Client ID configured the sections
+render sample data, badged as such. Opened as a standalone file — OAuth lives
+in the app — the strip says so and the briefing behaves exactly as before.
+
 ## Quick start
 
 `npm run dev`, then Nexus opens on the briefing. Or open
@@ -64,14 +98,21 @@ The master prompt is written to be run by Claude (Cowork or Claude Code) with
 Gmail + Google Calendar connectors attached. Weekly: full 14-day/7-day sweep,
 **ALWAYS** carrying the punch-list state forward. To ship a rebuild here, write
 the regenerated page over `public/weekly-briefing.html` and commit — no React
-changes are needed. Daily: the page's 🔄 Refresh button copies a standing prompt
-that re-sweeps the last 24h; items received today self-badge "NEW" on load.
+changes are needed, but **re-add the two `public/briefing/` lines** in the
+page's head (they sit right after the closing `</style>`). Forgetting costs a
+flash of the original theme, not the integration: `WeeklyBriefing.tsx` injects
+them if they are missing.
+
+Day to day you do not need a rebuild at all — **↻ Sync now** in the Live data
+strip pulls fresh mail and events into the page directly. The 🔄 Refresh button
+still copies the standing prompt, which is the different and larger job:
+regenerating the whole curated briefing — categorized bands, drafts, logistics,
+the vault — which is the LLM's work, not an API call.
 
 ## Where to take it next
 
-See `docs/ARCHITECTURE.md` for the state model, extension points, and a
-suggested path from this static page to a real backed app (OAuth, live refresh
-from the button itself, multi-account email). Now that the briefing ships inside
-a React app with a Gmail OAuth client already wired up
-(`src/lib/gmail.ts`), Phase 1 of that roadmap has a much shorter path: the
-refresh could run in the app and hand the page a fresh payload.
+See `docs/ARCHITECTURE.md` for the state model and extension points. Its Phase 1
+roadmap — browser OAuth, live refresh from the page itself — is now done via the
+bridge, with no backend. What is still open: the curated content (bands, drafts,
+severity ratings, logistics) is still written at rebuild time rather than
+derived live, and additional mailboxes would each need their own connection.
