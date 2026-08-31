@@ -428,6 +428,18 @@
     '.mon-tile .mon-timeline{border-left-color:currentColor}',
     '.mon-tile .mon-msg::before{background:currentColor}',
     '.mon-tile.is-done{opacity:.55}',
+    '.mon-section{margin-bottom:26px}',
+    // Thread shape as the tile's headline: the numbers are the point.
+    '.tstats{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 2px}',
+    '.tstat__n{font-size:23px;font-weight:700;line-height:1.05}',
+    '.tstat__l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;opacity:.75}',
+    '.tstat--warn .tstat__n{text-decoration:underline;text-decoration-thickness:2px}',
+    '.tstats__note{font-size:11px;opacity:.8;margin-bottom:4px}',
+    '.mon-tile__actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:9px}',
+    '.mon-act{font:inherit;font-size:11px;padding:3px 8px;border-radius:7px;',
+    'border:1px solid currentColor;background:rgba(0,0,0,.12);color:inherit;cursor:pointer}',
+    '.mon-act:hover{background:rgba(0,0,0,.22)}',
+    'select.mon-act{padding:3px 6px}',
 
     '.gd-item{border:1px solid var(--line);border-radius:12px;background:var(--surface);',
     'padding:14px 16px;margin-bottom:14px}',
@@ -1604,7 +1616,13 @@
     ['court', '➡️ In their court'],
     ['fwd', '📤 Forwarded'],
     ['remind', '⏰ Reminder set'],
-    ['none', '— no status set'],
+    ['none', '— not set (in my court)'],
+  ]
+  var STATUS_SET_OPTS = [
+    ['court', '➡️ In my court'],
+    ['waiting', '⏳ Waiting on reply'],
+    ['fwd', '📤 Forwarded'],
+    ['remind', '⏰ Reminder set'],
   ]
   var DONE_FILTERS = [
     ['open', 'Open only'],
@@ -1621,17 +1639,19 @@
    * no handler — hence the explicit listener onto its global switchTab.
    */
   function buildMonitorTab(bridge) {
-    if (monitorPanel || typeof panels !== 'object' || !panels) return
-    var main = document.querySelector('main')
-    var nav = document.querySelector('.masthead .tabs')
-    if (!main || !nav) return
+    if (monitorPanel) return
+    // One working surface, not two. The filters and the severity board go at
+    // the TOP of the punch list, above the page's own grouped list, so
+    // "what am I waiting on" and "what is on the list" are the same tab.
+    var punch = document.getElementById('panel-punchlist')
+    var root = document.getElementById('punchlist-root')
+    if (!punch || !root) return
 
-    monitorPanel = el('div', 'panel')
+    monitorPanel = el('section', 'mon-section')
     monitorPanel.id = 'panel-monitor'
     monitorPanel.innerHTML =
-      '<section>' +
       '<div class="section-head"><h2>🔎 Monitor</h2>' +
-      '<span class="sub">Filter the punch list — everything you are waiting on, in one place — and follow the mail behind each item</span>' +
+      '<span class="sub">Everything you are waiting on — filter, follow the mail behind each item, and work it here</span>' +
       '</div>' +
       '<div class="mon-filters">' +
       '<input class="own-in mon-q" placeholder="Search titles…">' +
@@ -1644,22 +1664,11 @@
       '<button type="button" class="live-btn mon-clear">Clear</button>' +
       '</div>' +
       '<div class="mon-count"></div>' +
-      '<div class="mon-results"></div>' +
-      '</section>'
-    main.appendChild(monitorPanel)
-    panels.monitor = monitorPanel
+      '<div class="mon-results"></div>'
 
-    var btn = el('button', 'tab-btn')
-    btn.type = 'button'
-    btn.setAttribute('role', 'tab')
-    btn.dataset.panel = 'monitor'
-    btn.setAttribute('aria-selected', 'false')
-    btn.innerHTML = '🔎 Monitor <span class="count mono" id="monitor-tab-count">0</span>'
-    btn.addEventListener('click', function () {
-      if (typeof switchTab === 'function') switchTab('monitor')
-      renderMonitor(bridge)
-    })
-    nav.appendChild(btn)
+    // Above the add-item form and the page's own grouped list.
+    var form = document.getElementById('own-form')
+    punch.insertBefore(monitorPanel, form || root)
 
     ;['.mon-q', '.mon-status', '.mon-cat', '.mon-sev', '.mon-done'].forEach(function (sel) {
       var node = monitorPanel.querySelector(sel)
@@ -1676,14 +1685,72 @@
       renderMonitor(bridge)
     })
 
-    // One delegated handler for every expandable thread on the tab.
     monitorPanel.addEventListener('click', function (e) {
       var toggle = e.target.closest('.mon-thread-toggle')
-      if (toggle) loadThread(bridge, toggle.dataset.id, toggle.dataset.email)
+      if (toggle) { loadThread(bridge, toggle.dataset.id, toggle.dataset.email); return }
+
+      var done = e.target.closest('.mon-done-btn')
+      if (done) { setDone(bridge, done.dataset.id, done.dataset.state !== 'done'); return }
+
+      var edit = e.target.closest('.mon-edit')
+      if (edit) { editTitle(bridge, edit.dataset.id); return }
     })
+
+    // Status is a select, so it changes on change, not click.
+    monitorPanel.addEventListener('change', function (e) {
+      var sel = e.target.closest('.mon-status-set')
+      if (sel) setItemStatus(bridge, sel.dataset.id, sel.value)
+    })
+
   }
 
-  function statusOf(id) {
+  /** Completion, status and title edits belong on the tile, not elsewhere. */
+  function setDone(bridge, id, done) {
+    try {
+      var e = STATE.punchlist[id]
+      if (!e) return
+      e.done = !!done
+      e.doneAt = done
+        ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : null
+      persistPage()
+      if (typeof renderPunchList === 'function') renderPunchList()
+      renderMonitor(bridge)
+      renderStats(lastData.events, lastData.mail)
+    } catch (err) {}
+  }
+
+  function setItemStatus(bridge, id, value) {
+    try {
+      if (!STATE.status) STATE.status = {}
+      if (value) STATE.status[id] = value
+      else delete STATE.status[id]
+      persistPage()
+      if (typeof renderPunchList === 'function') renderPunchList()
+      renderMonitor(bridge)
+    } catch (err) {}
+  }
+
+  function editTitle(bridge, id) {
+    try {
+      var e = STATE.punchlist[id]
+      if (!e) return
+      var next = prompt('Edit item', e.title)
+      if (next === null) return
+      next = next.trim()
+      if (!next) return
+      e.title = next
+      if (own.items[id]) { own.items[id].title = next; saveOwn() }
+      persistPage()
+      if (typeof renderPunchList === 'function') renderPunchList()
+      renderMonitor(bridge)
+    } catch (err) {}
+  }
+
+  var DEFAULT_STATUS = 'court'
+
+  /** Raw stored status; '' when none has been set. */
+  function rawStatus(id) {
     try {
       return (STATE.status && STATE.status[id]) || ''
     } catch (e) {
@@ -1691,11 +1758,19 @@
     }
   }
 
+  /**
+   * An item with no status set is one nobody else is holding — so it is in
+   * your court by default, which is the honest reading and the one that keeps
+   * the "waiting on someone" filters meaningful.
+   */
+  function statusOf(id) {
+    return rawStatus(id) || DEFAULT_STATUS
+  }
+
   function matches(id, entry, f) {
     if (f.q && String(entry.title || '').toLowerCase().indexOf(f.q) === -1) return false
-    var st = statusOf(id)
-    if (f.status === 'none' && st) return false
-    if (f.status && f.status !== 'none' && st !== f.status) return false
+    if (f.status === 'none' && rawStatus(id)) return false
+    if (f.status && f.status !== 'none' && statusOf(id) !== f.status) return false
     if (f.cat && entry.category !== f.cat) return false
     if (f.sev && entry.severity !== f.sev) return false
     if (f.done === 'open' && entry.done) return false
@@ -1705,7 +1780,7 @@
 
   function statusLabel(code) {
     var out = ''
-    STATUS_FILTERS.forEach(function (p) {
+    STATUS_SET_OPTS.forEach(function (p) {
       if (p[0] === code && code) out = p[1]
     })
     return out
@@ -1752,8 +1827,6 @@
     var countEl = monitorPanel.querySelector('.mon-count')
     countEl.textContent =
       entries.length + (entries.length === 1 ? ' item' : ' items') + ' match'
-    var tabCount = document.getElementById('monitor-tab-count')
-    if (tabCount) tabCount.textContent = entries.length
 
     var results = monitorPanel.querySelector('.mon-results')
     if (!entries.length) {
@@ -1794,9 +1867,81 @@
       '</div>'
   }
 
+  function daysBetween(a, b) {
+    return Math.max(0, Math.round((b - a) / 86400000))
+  }
+
+  /**
+   * Thread shape as numbers, from a loaded timeline: how long it has been
+   * running and how long it has been quiet. The gap is the number that
+   * actually decides whether something needs chasing.
+   */
+  function threadStats(t) {
+    if (!t || t.error || !t.messages || !t.messages.length) return null
+    var first = new Date(t.messages[0].date).getTime()
+    var last = new Date(t.messages[t.messages.length - 1].date).getTime()
+    var now = Date.now()
+    return {
+      count: t.messages.length,
+      started: first,
+      totalDays: daysBetween(first, now),
+      quietDays: daysBetween(last, now),
+      awaitingYou: !t.messages[t.messages.length - 1].outbound,
+    }
+  }
+
+  function bigStat(value, label, tone) {
+    return '<div class="tstat' + (tone ? ' tstat--' + tone : '') + '">' +
+      '<div class="tstat__n mono">' + esc(String(value)) + '</div>' +
+      '<div class="tstat__l">' + esc(label) + '</div></div>'
+  }
+
+  function threadStatsHtml(stats, deadline) {
+    if (!stats) return ''
+    return '<div class="tstats">' +
+      bigStat(stats.count, stats.count === 1 ? 'message' : 'messages') +
+      bigStat(stats.totalDays + 'd', 'thread age') +
+      bigStat(stats.quietDays + 'd', 'since last reply', stats.quietDays >= 3 ? 'warn' : '') +
+      (deadline ? bigStat(deadline.days + 'd', 'to ' + deadline.label, deadline.days <= 3 ? 'warn' : '') : '') +
+      '</div>' +
+      '<div class="tstats__note">Started ' +
+      esc(new Date(stats.started).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) +
+      ' · ' + (stats.awaitingYou ? 'awaiting your reply' : 'last word was yours') + '</div>'
+  }
+
+  /**
+   * A date in the item's own text is the only deadline we can know about
+   * without inventing one, so surface that rather than guessing.
+   */
+  var DATE_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/i
+
+  function deadlineFrom(text) {
+    var m = DATE_RE.exec(String(text || ''))
+    if (!m) return null
+    var now = new Date()
+    var d = new Date(m[1] + ' ' + m[2] + ', ' + now.getFullYear())
+    if (isNaN(d.getTime())) return null
+    // A date already past this year almost certainly means next year.
+    if (d.getTime() < now.getTime() - 30 * 86400000) d.setFullYear(now.getFullYear() + 1)
+    var days = Math.round((d.getTime() - now.getTime()) / 86400000)
+    if (days < 0 || days > 400) return null
+    return { days: days, label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
+  }
+
+  /** Where the item came from: its calendar, or the mailbox behind it. */
+  function sourceOf(id, e, emailId) {
+    if (e.source) return e.source
+    var ev = (lastData.events || []).filter(function (x) {
+      return syncKey('event', x.id) === id.replace(/^sync-/, '')
+    })[0]
+    if (ev) return '📅 ' + (ev.calendar || 'Calendar')
+    if (emailId) return '✉️ Gmail'
+    return own.items[id] ? '✍️ Added by you' : '📄 From the sweep'
+  }
+
   function tileHtml(id, e, bridge) {
     var sev = e.severity || 'low'
-    var st = statusLabel(statusOf(id))
+    var st = statusOf(id)
     var emailId = emailIdFor(id, e, bridge)
     var linksHtml = (e.links || [])
       .map(function (l) {
@@ -1804,17 +1949,32 @@
       })
       .join(' ')
     var cached = threadCache[emailId]
+    var stats = threadStats(cached)
+    var deadline = deadlineFrom(e.title)
+
     return (
       '<div class="mon-tile mon-tile--' + esc(sev) + (e.done ? ' is-done' : '') + '">' +
       '<div class="mon-tile__title">' + esc(e.title) + '</div>' +
-      '<div class="mon-tile__meta">' + esc(e.category || '') +
-      (e.addedAt ? ' · ' + esc(e.addedAt) : '') +
+      '<div class="mon-tile__meta">' + esc(sourceOf(id, e, emailId)) +
+      ' · ' + esc(e.category || 'personal') +
+      (e.addedAt ? ' · added ' + esc(e.addedAt) : '') +
       ((e.subs || []).length ? ' · ' + e.subs.length + ' steps' : '') + '</div>' +
-      '<div class="mon-tile__chips">' +
-      (st ? '<span class="mon-chip">' + esc(st) + '</span>' : '') +
-      (e.done ? '<span class="mon-chip mon-chip--done">✓ done</span>' : '') +
+
+      threadStatsHtml(stats, deadline) +
+
+      '<div class="mon-tile__actions">' +
+      '<button type="button" class="mon-act mon-done-btn" data-id="' + esc(id) + '" data-state="' +
+      (e.done ? 'done' : 'open') + '">' + (e.done ? '↺ Reopen' : '✓ Complete') + '</button>' +
+      '<button type="button" class="mon-act mon-edit" data-id="' + esc(id) + '">✏️ Edit</button>' +
+      '<select class="mon-act mon-status-set" data-id="' + esc(id) + '" title="Forward status">' +
+      STATUS_SET_OPTS.map(function (o) {
+        return '<option value="' + o[0] + '"' + (o[0] === st ? ' selected' : '') + '>' + esc(o[1]) + '</option>'
+      }).join('') +
+      '</select>' +
+      (e.done ? '<span class="mon-chip mon-chip--done">done ' + esc(e.doneAt || '') + '</span>' : '') +
       (own.items[id] ? '<span class="mon-chip">yours</span>' : '') +
       '</div>' +
+
       (linksHtml ? '<div class="cat-links">' + linksHtml + '</div>' : '') +
       (emailId
         ? '<details class="mon-thread"' + (cached ? ' open' : '') + '>' +
@@ -1834,6 +1994,9 @@
       threadCache[emailId] = t
       var body = monitorPanel.querySelector('.mon-thread__body[data-for="' + emailId + '"]')
       if (body) body.innerHTML = threadHtml(t)
+      // The tile's headline numbers come from the timeline, so they only
+      // exist once it has loaded — re-render to bring them in.
+      renderMonitor(bridge)
     })
   }
 
