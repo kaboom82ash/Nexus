@@ -429,6 +429,56 @@
     '.mon-tile .mon-msg::before{background:currentColor}',
     '.mon-tile.is-done{opacity:.55}',
     '.mon-section{margin-bottom:26px}',
+
+    // Tabs: bigger targets, rounded, with the active one clearly seated.
+    '.masthead .tabs{gap:8px;flex-wrap:wrap}',
+    '.masthead .tab-btn{font-size:14px;padding:11px 16px;border-radius:12px;',
+    'border:1px solid var(--line);background:var(--surface);font-weight:600;',
+    'transition:transform .08s ease,border-color .12s ease}',
+    '.masthead .tab-btn:hover{border-color:var(--accent);transform:translateY(-1px)}',
+    '.masthead .tab-btn[aria-selected="true"]{background:var(--accent);',
+    'color:var(--accent-ink);border-color:var(--accent)}',
+    '.masthead .tab-btn .count{font-size:11px;padding:1px 7px;border-radius:999px;',
+    'background:rgba(0,0,0,.18);margin-left:7px}',
+
+    // Filled tiles need air between them, or two colours meeting edge-to-edge
+    // read as one band and the severity boundary disappears.
+    '.cat-grid-items{gap:12px}',
+    '.cat-row[class*="sev-"]{margin-bottom:12px;border:2px solid var(--surface)}',
+    '.cat-grid-items .cat-row[class*="sev-"]{margin-bottom:0}',
+    '.card[class*="sev-"]{margin-bottom:14px;border:2px solid var(--surface)}',
+    '.punch-row[class*="sev-"]{margin-bottom:10px;border:2px solid var(--surface)}',
+    '.mon-tile{border:2px solid var(--surface)}',
+
+    '.glance{margin-top:4px}',
+    '.glance__head{font-size:11px;font-weight:700;letter-spacing:.06em;',
+    'text-transform:uppercase;color:var(--muted);margin:6px 0 8px}',
+    '.glance__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}',
+    '.glance__cell{border-radius:12px;padding:11px 13px;border:1px solid var(--line);',
+    'background:var(--surface);border-left-width:4px}',
+    '.glance--personal{border-left-color:var(--cat-personal)}',
+    '.glance--kids{border-left-color:var(--cat-kids)}',
+    '.glance--home{border-left-color:var(--cat-home)}',
+    '.glance--finance{border-left-color:var(--cat-finance)}',
+    '.glance--health{border-left-color:var(--cat-health)}',
+    '.glance--lifestyle{border-left-color:var(--cat-lifestyle)}',
+    '.glance__cat{font-size:12px;font-weight:700;text-transform:capitalize;margin-bottom:5px}',
+    '.glance__nums{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}',
+    '.glance__nums b{color:var(--ink);font-family:"IBM Plex Mono",monospace;font-size:13px}',
+
+    '.rank-list{border:1px solid var(--line);border-radius:12px;overflow:hidden}',
+    '.rank-row{display:flex;align-items:center;gap:12px;padding:10px 14px;',
+    'background:var(--surface);border-bottom:1px solid var(--line)}',
+    '.rank-row:last-child{border-bottom:none}',
+    '.rank-row.sev-critical{border-left:4px solid var(--critical)}',
+    '.rank-row.sev-high{border-left:4px solid var(--high)}',
+    '.rank-row.sev-medium{border-left:4px solid var(--medium)}',
+    '.rank-row.sev-low{border-left:4px solid var(--low)}',
+    '.rank-n{color:var(--muted);font-size:12px;flex:0 0 18px}',
+    '.rank-days{font-size:16px;font-weight:700;flex:0 0 52px}',
+    '.rank-days--soon{color:var(--critical)}',
+    '.rank-title{flex:1;font-size:13px}',
+    '.rank-when{color:var(--muted);font-size:11.5px}',
     // Thread shape as the tile's headline: the numbers are the point.
     '.tstats{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 2px}',
     '.tstat__n{font-size:23px;font-weight:700;line-height:1.05}',
@@ -538,11 +588,23 @@
     document.head.appendChild(style)
   }
 
+  /**
+   * The page is generated with a weekly masthead, but it now refreshes itself
+   * hourly and leads with what landed today — so it is retitled here rather
+   * than in the generated file, which a rebuild would overwrite.
+   */
+  function retitle() {
+    var eyebrow = document.querySelector('.masthead .eyebrow')
+    if (eyebrow) eyebrow.textContent = 'Daily digest · AK'
+    if (/weekly briefing/i.test(document.title)) document.title = 'AK Daily Digest'
+  }
+
   function buildStrip() {
     var masthead = document.querySelector('.masthead')
     var tabs = masthead && masthead.querySelector('.tabs')
     if (!masthead || !tabs) return null
     injectStyles()
+    retitle()
 
     strip = el('div', 'live-strip')
     strip.id = 'live-strip'
@@ -750,48 +812,51 @@
       host.innerHTML = '<div class="cat-row no-check"><div class="cat-main"><div class="cat-meta">Nothing in the last ' + currentRange().label + '.</div></div></div>'
       return
     }
-    var html = ''
-    items.forEach(function (m) {
-      var sev = mailSeverity(m.score)
-      var meta = [
-        esc(m.from),
-        timeLabel(m.date, false),
-        m.unread ? 'Unread' : '',
-        // Gmail's own tab, kept as prose: it is not one of the page's
-        // categories, so it must not become a data-cat.
-        m.category && m.category !== 'other' ? esc(m.category) : '',
-        esc((m.reasons || []).slice(0, 3).join(' · ')),
-      ].filter(Boolean).join(' · ')
-      // The API id is right here, so offer the reliable way to attach a
-      // message to an item — the id in Gmail's own address bar is a different
-      // encoding the API cannot resolve.
-      var link = '<div class="cat-links"><a class="mail-link" href="' + esc(mailHref(m)) +
-        '" target="_blank" rel="noopener">✉️ Open in Gmail ↗</a>' +
-        (m.id ? '<button type="button" class="live-attach" data-mid="' + esc(m.id) +
-          '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌 Add to punch list</button>' +
-          '<button type="button" class="live-attach live-draft" data-mid="' + esc(m.id) +
-          '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
-          '" data-snippet="' + esc((m.reasons || []).join(', ')) +
-          '" title="Draft a reply to this message">✍️ Draft reply</button>' : '') +
-        '</div>'
-      // No data-cat: the page's own inferCategory() reads the title and always
-      // returns one of its known keys, so a live item can never land in a
-      // category the punch list refuses to render. And no severity pill inside
-      // .cat-title — the punch list takes an entry's title from that element's
-      // text, and the pill's label would be glued onto it.
-      html +=
-        '<div class="cat-row sev-' + sev + '" data-sync="' + esc(syncKey('mail', m.id)) + '">' +
-        '<div class="cat-main">' +
-        '<div class="cat-title">' + esc(m.subject) + '</div>' +
-        '<div class="cat-meta">' + sevPill(sev) + ' ' +
-        (fresh.indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
-        (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
-        link +
-        '</div></div>'
-    })
+    var html = items.map(function (m) { return mailRowHtml(m, mock, fresh) }).join('')
     host.innerHTML = html
     refreshMailSubhead()
     setCount('live-inbox', items.length)
+  }
+
+  /** One live message as a row the page's injectCheckables() will adopt. */
+  function mailRowHtml(m, mock, fresh) {
+    var sev = mailSeverity(m.score)
+    var meta = [
+      esc(m.from),
+      timeLabel(m.date, false),
+      m.unread ? 'Unread' : '',
+      // Gmail's own tab, kept as prose: it is not one of the page's
+      // categories, so it must not become a data-cat.
+      m.category && m.category !== 'other' ? esc(m.category) : '',
+      esc((m.reasons || []).slice(0, 3).join(' · ')),
+    ].filter(Boolean).join(' · ')
+
+    // The API id is right here, so offer the reliable way to attach a message
+    // to an item — the id in Gmail's own address bar is a different encoding
+    // the API cannot resolve.
+    var link = '<div class="cat-links"><a class="mail-link" href="' + esc(mailHref(m)) +
+      '" target="_blank" rel="noopener">✉️ Open in Gmail ↗</a>' +
+      (m.id ? '<button type="button" class="live-attach" data-mid="' + esc(m.id) +
+        '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌 Add to punch list</button>' +
+        '<button type="button" class="live-attach live-draft" data-mid="' + esc(m.id) +
+        '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
+        '" data-snippet="' + esc((m.reasons || []).join(', ')) +
+        '" title="Draft a reply to this message">✍️ Draft reply</button>' : '') +
+      '</div>'
+
+    // No data-cat: the page's own inferCategory() reads the title and always
+    // returns one of its known keys, so a live item can never land in a
+    // category the punch list refuses to render. And no severity pill inside
+    // .cat-title — the punch list takes an entry's title from that element's
+    // text, and the pill's label would be glued onto it.
+    return '<div class="cat-row sev-' + sev + '" data-sync="' + esc(syncKey('mail', m.id)) + '">' +
+      '<div class="cat-main">' +
+      '<div class="cat-title">' + esc(m.subject) + '</div>' +
+      '<div class="cat-meta">' + sevPill(sev) + ' ' +
+      ((fresh || []).indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
+      (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
+      link +
+      '</div></div>'
   }
 
   function renderEvents(allItems, mock, newIds) {
@@ -1033,6 +1098,8 @@
   // ---- masthead: sync stamp + the stat strip ------------------------------
 
   var STATS_OPEN_KEY = 'ak-briefing-stats-open'
+  /** Which tab the dashboard is describing. */
+  var activeTab = 'punchlist'
   var LAST_SYNC_KEY = 'ak-briefing-last-sync'
   var SEEN_KEY = 'ak-briefing-seen'
 
@@ -1177,8 +1244,62 @@
         queued = false
         renderStats(lastData.events, lastData.mail)
         renderMonitor(bridge)
+        renderTopActions(bridge)
       }, 60)
     }).observe(root, { childList: true, subtree: true })
+  }
+
+  /**
+   * Per-category totals for the week: how much mail relates to it, how many
+   * events, and how many hours those events take.
+   */
+  function glanceHtml(events, mail) {
+    var weekEnd = Date.now() + 7 * 86400000
+    var cats = {}
+    function bucket(c) {
+      if (!cats[c]) cats[c] = { emails: 0, events: 0, hours: 0 }
+      return cats[c]
+    }
+    ;(events || []).forEach(function (ev) {
+      var t = new Date(ev.start).getTime()
+      if (!(t >= Date.now() && t <= weekEnd)) return
+      var b = bucket(eventCategory(ev))
+      b.events++
+      b.hours += hoursOf(ev)
+    })
+    ;(mail || []).forEach(function (m) {
+      bucket(inferMailCategory(m)).emails++
+    })
+
+    var keys = Object.keys(cats).sort(function (a, b) {
+      return (cats[b].hours + cats[b].emails) - (cats[a].hours + cats[a].emails)
+    })
+    if (!keys.length) return ''
+
+    return '<div class="glance">' +
+      '<div class="glance__head">This week at a glance</div>' +
+      '<div class="glance__grid">' +
+      keys.map(function (c) {
+        var g = cats[c]
+        return '<div class="glance__cell glance--' + esc(c) + '">' +
+          '<div class="glance__cat">' + esc(c) + '</div>' +
+          '<div class="glance__nums">' +
+          '<span><b>' + g.emails + '</b> ' + (g.emails === 1 ? 'email' : 'emails') + '</span>' +
+          '<span><b>' + g.events + '</b> ' + (g.events === 1 ? 'event' : 'events') + '</span>' +
+          '<span><b>' + esc(fmtHours(g.hours)) + '</b></span>' +
+          '</div></div>'
+      }).join('') +
+      '</div></div>'
+  }
+
+  /** Mail has no category of the page's kind, so infer one from its subject. */
+  function inferMailCategory(m) {
+    if (typeof inferCategory === 'function') {
+      try {
+        return inferCategory(document.createElement('div'), m.subject || '')
+      } catch (e) {}
+    }
+    return 'personal'
   }
 
   function renderStats(events, mail) {
@@ -1190,9 +1311,6 @@
       return new Date(ev.start).getTime() >= Date.now()
     })
     var meetings = upcoming.filter(isMeeting)
-
-    // "Upcoming week" = the next 7 days, which is the horizon the time-per-
-    // category split is meant to help you plan against.
     var weekEnd = Date.now() + 7 * 86400000
     var inWeek = meetings.filter(function (ev) {
       return new Date(ev.start).getTime() <= weekEnd
@@ -1210,34 +1328,65 @@
       .slice(0, 5)
       .map(function (c) { return esc(c) + ' ' + fmtHours(byCat[c]) })
 
-    var dayAgo = Date.now() - 86400000
+    var now = Date.now()
     var last24 = (mail || []).filter(function (m) {
-      return new Date(m.date).getTime() >= dayAgo
+      return new Date(m.date).getTime() >= now - 86400000
+    })
+    var sinceVisit = (mail || []).filter(function (m) {
+      return previousVisit && new Date(m.date).getTime() > previousVisit
     })
 
-    var row1 =
-      '<div class="stat-strip stat-row stat-row--punch">' +
-      statHtml(p.total, '📋 On punch list') +
-      statHtml(p.critical, 'Critical', 'var(--critical)') +
-      statHtml(p.high, 'High', 'var(--high)') +
-      statHtml(p.medium, 'Medium', 'var(--medium)') +
-      '</div>'
-
-    var row2 =
-      '<div class="stat-strip stat-row stat-row--cal">' +
-      statHtml(upcoming.length, '📅 Events coming up') +
-      statHtml(meetings.length, 'Meetings (routines excluded)') +
-      statHtml(fmtHours(weekHours), 'Proposed meeting time, next 7 days') +
-      '<div class="stat stat--wide"><div class="l">Time per category, next 7 days</div>' +
-      '<div class="stat-cats">' +
-      (catBits.length ? catBits.join(' · ') : 'nothing scheduled') +
-      '</div></div>' +
-      '</div>'
-
-    var row3 =
-      '<div class="stat-strip stat-row stat-row--mail">' +
-      statHtml(last24.length, '✉️ New emails, last 24 hours') +
-      '</div>'
+    // Only the metrics that describe the tab you are on. A punch-list count
+    // beside a calendar you are reading is noise, and the whole strip at once
+    // is why it needed collapsing in the first place.
+    var rows = ''
+    if (activeTab === 'punchlist') {
+      rows =
+        '<div class="stat-strip stat-row stat-row--punch">' +
+        statHtml(p.total, '📋 On punch list') +
+        statHtml(p.critical, 'Critical', 'var(--critical)') +
+        statHtml(p.high, 'High', 'var(--high)') +
+        statHtml(p.medium, 'Medium', 'var(--medium)') +
+        '</div>'
+    } else if (activeTab === 'calendar') {
+      rows =
+        '<div class="stat-strip stat-row stat-row--cal">' +
+        statHtml(upcoming.length, '📅 Events coming up') +
+        statHtml(meetings.length, 'Meetings (routines excluded)') +
+        statHtml(fmtHours(weekHours), 'Proposed meeting time, next 7 days') +
+        '<div class="stat stat--wide"><div class="l">Time per category, next 7 days</div>' +
+        '<div class="stat-cats">' +
+        (catBits.length ? catBits.join(' · ') : 'nothing scheduled') +
+        '</div></div>' +
+        '</div>'
+    } else if (activeTab === 'daily' || activeTab === 'actions') {
+      rows =
+        '<div class="stat-strip stat-row stat-row--punch">' +
+        statHtml(sinceVisit.length, '🆕 Since your last visit') +
+        statHtml(last24.length, '✉️ New emails, last 24 hours') +
+        statHtml((mail || []).length, 'In the current window') +
+        statHtml((mail || []).filter(function (m) { return m.unread }).length, 'Unread') +
+        '</div>'
+    } else if (activeTab === 'drafts') {
+      own.drafts = own.drafts || {}
+      var threads = Object.keys(own.drafts).filter(function (k) { return own.drafts[k].length })
+      var total = threads.reduce(function (n, k) { return n + own.drafts[k].length }, 0)
+      rows =
+        '<div class="stat-strip stat-row stat-row--punch">' +
+        statHtml(threads.length, '✍️ Emails with drafts') +
+        statHtml(total, 'Drafts written') +
+        statHtml(p.total, '📋 On punch list') +
+        statHtml(last24.length, '✉️ New, last 24h') +
+        '</div>'
+    } else {
+      rows =
+        '<div class="stat-strip stat-row stat-row--punch">' +
+        statHtml(p.total, '📋 On punch list') +
+        statHtml(upcoming.length, '📅 Events coming up') +
+        statHtml(last24.length, '✉️ New, last 24h') +
+        statHtml(sinceVisit.length, '🆕 Since last visit') +
+        '</div>'
+    }
 
     var wrap = document.getElementById('stat-rows')
     if (!wrap) {
@@ -1267,11 +1416,11 @@
         toggle.querySelector('.stat-toggle__caret').textContent = '▸'
       }
     }
-    wrap.querySelector('.stat-body').innerHTML = row1 + row2 + row3
+    // "At a glance" is the home view's job, so it rides with the summary tab.
+    wrap.querySelector('.stat-body').innerHTML =
+      rows + (activeTab === 'punchlist' || activeTab === 'vault' ? glanceHtml(events, mail) : '')
     syncScrollPadding()
   }
-
-
 
   // ---- drafts -------------------------------------------------------------
 
@@ -1402,6 +1551,146 @@
         }).join('') +
         '</div>'
     }).join('')
+  }
+
+  // ---- 24/7 tab: today's mail, and what landed since you were last here ----
+
+  var LAST_VISIT_KEY = 'ak-briefing-last-visit'
+  /** Read once at boot: the previous visit, before this one overwrites it. */
+  var previousVisit = (function () {
+    var raw = readStored(LAST_VISIT_KEY, '')
+    var t = raw ? new Date(raw).getTime() : 0
+    writeStored(LAST_VISIT_KEY, new Date().toISOString())
+    return isFinite(t) && t > 0 ? t : 0
+  })()
+
+  var dailyPanel = null
+
+  /**
+   * Mail gets its own tab. Two sections: what has arrived since you were last
+   * here, then the last 24 hours — the first is the one that answers "what did
+   * I miss", which a rolling 24-hour window cannot.
+   */
+  function buildDailyTab(bridge) {
+    if (dailyPanel) return
+    var main = document.querySelector('main')
+    var nav = document.querySelector('.masthead .tabs')
+    if (!main || !nav || typeof panels !== 'object' || !panels) return
+
+    dailyPanel = el('div', 'panel')
+    dailyPanel.id = 'panel-daily'
+    dailyPanel.innerHTML =
+      '<section id="mail-since"></section><section id="mail-24h"></section>'
+    main.appendChild(dailyPanel)
+    panels.daily = dailyPanel
+
+    var btn = el('button', 'tab-btn')
+    btn.type = 'button'
+    btn.setAttribute('role', 'tab')
+    btn.dataset.panel = 'daily'
+    btn.setAttribute('aria-selected', 'false')
+    btn.innerHTML = '🕐 24/7 <span class="count mono" id="daily-tab-count">0</span>'
+    // The page wires its tabs from a NodeList captured at load, so a button
+    // added afterwards needs its own handler.
+    btn.addEventListener('click', function () {
+      if (typeof switchTab === 'function') switchTab('daily')
+    })
+    nav.insertBefore(btn, nav.children[1] || null)
+  }
+
+  function mailSectionHtml(title, sub, items, mock, emptyText) {
+    var body = items.length
+      ? '<div class="cat-grid-band live-band"><div class="cat-grid-items">' +
+        items.map(function (m) { return mailRowHtml(m, mock, []) }).join('') +
+        '</div></div>'
+      : '<p class="note">' + esc(emptyText) + '</p>'
+    return '<div class="section-head"><h2>' + esc(title) + '</h2>' +
+      '<span class="sub">' + esc(sub) + '</span></div>' + body
+  }
+
+  function renderDaily(items, mock) {
+    if (!dailyPanel) return
+    var now = Date.now()
+    var since = (items || []).filter(function (m) {
+      return previousVisit && new Date(m.date).getTime() > previousVisit
+    })
+    var day = (items || []).filter(function (m) {
+      return new Date(m.date).getTime() >= now - 86400000
+    })
+
+    var sinceLabel = previousVisit
+      ? new Date(previousVisit).toLocaleDateString('en-US', {
+          weekday: 'short', month: 'short', day: 'numeric',
+        }) + ' · ' + new Date(previousVisit).toLocaleTimeString('en-US', {
+          hour: 'numeric', minute: '2-digit',
+        })
+      : ''
+
+    document.getElementById('mail-since').innerHTML = mailSectionHtml(
+      '🆕 Since your last visit',
+      previousVisit ? 'Arrived after ' + sinceLabel : 'First visit on this browser — nothing to compare against yet',
+      since, mock,
+      previousVisit ? 'Nothing new since you were last here.' : 'Come back and this will show what arrived while you were away.',
+    )
+    document.getElementById('mail-24h').innerHTML = mailSectionHtml(
+      '🕐 Last 24 hours',
+      'Everything that landed today, ranked by the dashboard’s priority score · check one to queue it',
+      day, mock,
+      'Nothing in the last 24 hours.',
+    )
+
+    var count = document.getElementById('daily-tab-count')
+    if (count) count.textContent = since.length || day.length
+
+    rewirePage()
+  }
+
+  // ---- Top actions, ranked by deadline ------------------------------------
+
+  /**
+   * Deadline order is not severity order: a Low item due tomorrow outranks a
+   * Critical one due in a month, and that is exactly what a "what do I do
+   * next" list has to say.
+   */
+  function renderTopActions(bridge) {
+    var punch = document.getElementById('panel-punchlist')
+    if (!punch) return
+    var host = document.getElementById('top-actions-ranked')
+    if (!host) {
+      host = el('section', 'mon-section')
+      host.id = 'top-actions-ranked'
+      punch.insertBefore(host, punch.firstChild)
+    }
+
+    var ranked = []
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done) return
+        var d = deadlineFrom(e.title)
+        if (d) ranked.push({ id: id, e: e, d: d })
+      })
+    } catch (err) {}
+    ranked.sort(function (a, b) { return a.d.days - b.d.days })
+
+    var head = '<div class="section-head"><h2>⏱️ Top actions — ranked by deadline</h2>' +
+      '<span class="sub">Soonest first, from dates found in each item · severity is shown but does not reorder</span></div>'
+
+    if (!ranked.length) {
+      host.innerHTML = head +
+        '<p class="note">No dated items on the list. Any item whose text carries a date (“Sep 12”) is ranked here.</p>'
+      return
+    }
+
+    host.innerHTML = head + '<div class="rank-list">' + ranked.slice(0, 8).map(function (r, i) {
+      return '<div class="rank-row sev-' + esc(r.e.severity || 'low') + '">' +
+        '<span class="rank-n mono">' + (i + 1) + '</span>' +
+        '<span class="rank-days mono' + (r.d.days <= 3 ? ' rank-days--soon' : '') + '">' +
+        r.d.days + 'd</span>' +
+        '<span class="rank-title">' + esc(r.e.title) + '</span>' +
+        '<span class="rank-when mono">' + esc(r.d.label) + '</span>' +
+        '</div>'
+    }).join('') + '</div>'
   }
 
   // ---- Calendar tab -------------------------------------------------------
@@ -2074,6 +2363,7 @@
         renderEvents(eventItems, events.mock, newEvents)
         rewirePage()
         lastData = { events: eventItems, mail: mailItems }
+        renderDaily(mailItems, mail.mock)
         renderCalendar(eventItems)
         renderMonitor(bridge)
         renderStats(eventItems, mailItems)
@@ -2238,6 +2528,15 @@
 
     // Own items and the Monitor tab work with or without a connection: they
     // read the punch list, which is local.
+    // Every tab button, the page's own included, retargets the dashboard.
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.tab-btn')
+      if (!btn || !btn.dataset.panel) return
+      activeTab = btn.dataset.panel
+      renderStats(lastData.events, lastData.mail)
+    })
+
+    buildDailyTab(bridge)
     buildOwnForm(bridge)
     buildMonitorTab(bridge)
     applyOwnItems()
@@ -2247,6 +2546,7 @@
     wirePrepBlocks()
     renderCalendar([])
     renderDrafts(bridge)
+    renderTopActions(bridge)
     watchPunchList(bridge)
 
     var st = bridge.status()

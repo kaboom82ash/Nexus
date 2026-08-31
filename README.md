@@ -1,11 +1,11 @@
 # Nexus Dashboard
 
-Nexus opens on the **Weekly Briefing** — a chief-of-staff console for the week —
+Nexus opens on the **Daily Digest** — a chief-of-staff console —
 with tab-based dashboards of live-feed **widgets** beside it.
 
-## Homepage: the Weekly Briefing
+## Homepage: the Daily Digest
 
-The pinned first tab is the [Weekly Briefing](weekly-briefing/README.md): one
+The pinned first tab is the [Daily Digest](weekly-briefing/README.md): one
 self-contained page fusing a Gmail sweep and a Google Calendar sweep into a
 punch list, deadline-ranked actions, a category inbox, a 14-day calendar grid,
 draft replies, and a reference vault. Checking any item queues it to the punch

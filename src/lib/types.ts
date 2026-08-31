@@ -49,12 +49,12 @@ export interface DashboardState {
 }
 
 /**
- * The Weekly Briefing homepage. It is not a tile tab — it holds no widgets and
+ * The Daily Digest homepage. It is not a tile tab — it holds no widgets and
  * cannot be renamed or removed — so it lives outside `tabs` and is identified
  * by this reserved id wherever an active view is stored.
  */
 export const HOME_TAB_ID = 'home'
-export const HOME_TAB_NAME = 'Weekly Briefing'
+export const HOME_TAB_NAME = 'Daily Digest'
 
 /** 5 x 5 grid. */
 export const GRID_COLS = 5

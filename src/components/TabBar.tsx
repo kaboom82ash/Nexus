@@ -40,7 +40,7 @@ export function TabBar({
           activeTabId === HOME_TAB_ID ? 'tab--active' : ''
         }`}
         onClick={() => onSelect(HOME_TAB_ID)}
-        title="Weekly Briefing homepage"
+        title="Daily Digest homepage"
       >
         <span className="tab__icon" aria-hidden="true">
           ⌂

@@ -1,4 +1,4 @@
-# AK Weekly Briefing — the Nexus homepage
+# AK Daily Digest — the Nexus homepage
 
 A personal chief-of-staff dashboard: one self-contained HTML page that fuses a
 Gmail sweep and a Google Calendar sweep into an operable weekly console — punch

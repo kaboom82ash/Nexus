@@ -60,14 +60,14 @@ export function WeeklyBriefing() {
   return (
     <div className="briefing">
       <div className="briefing__bar">
-        <span className="briefing__label">Weekly Briefing</span>
+        <span className="briefing__label">Daily Digest</span>
         <span className="briefing__hint">
           Your punch list saves in this browser.
         </span>
         <button
           className="btn btn--sm"
           onClick={() => setReloadKey((k) => k + 1)}
-          title="Reload the briefing page"
+          title="Reload the digest"
         >
           Reload
         </button>
@@ -76,7 +76,7 @@ export function WeeklyBriefing() {
           href={src}
           target="_blank"
           rel="noopener noreferrer"
-          title="Open the briefing in its own tab"
+          title="Open the digest in its own tab"
         >
           Open full page ↗
         </a>
@@ -85,7 +85,7 @@ export function WeeklyBriefing() {
         key={reloadKey}
         className="briefing__frame"
         src={src}
-        title="Weekly Briefing"
+        title="Daily Digest"
         onLoad={onLoad}
       />
     </div>
