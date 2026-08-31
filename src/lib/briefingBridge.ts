@@ -66,10 +66,17 @@ function message(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
+/**
+ * Which Google service to request. Google's consent screen lets a user grant
+ * one scope and refuse the other, so partial grants are a real state and each
+ * service has to be connectable on its own.
+ */
+export type BridgeService = 'all' | 'gmail' | 'calendar'
+
 export interface BriefingBridge {
   version: number
   status(): BridgeStatus
-  connect(): Promise<BridgeStatus & { error?: string }>
+  connect(which?: BridgeService): Promise<BridgeStatus & { error?: string }>
   fetchMail(opts: {
     lookbackHours?: number
     limit?: number
@@ -96,12 +103,18 @@ const bridge: BriefingBridge = {
 
   status,
 
-  async connect() {
+  async connect(which: BridgeService = 'all') {
     if (isMockMode()) return status()
+    const scopes =
+      which === 'gmail'
+        ? [GMAIL_READONLY_SCOPE]
+        : which === 'calendar'
+          ? [CALENDAR_SCOPE]
+          : [GMAIL_READONLY_SCOPE, CALENDAR_SCOPE]
     try {
-      // One popup covering both scopes. Called from a click inside the iframe,
-      // whose user activation propagates to this same-origin parent.
-      await requestScopes([GMAIL_READONLY_SCOPE, CALENDAR_SCOPE], true)
+      // One popup for the scopes asked for. Called from a click inside the
+      // iframe, whose user activation propagates to this same-origin parent.
+      await requestScopes(scopes, true)
       return status()
     } catch (err) {
       return { ...status(), error: message(err, 'Google sign-in failed') }

@@ -26,6 +26,20 @@
   var EVENT_DAYS = 14
   var EVENT_LIMIT = 25
 
+  // Once connected the page keeps itself current on its own. Polling pauses
+  // while the tab is hidden — a background tab burning Gmail quota every few
+  // minutes helps nobody — and catches up when it comes back.
+  var AUTO_SYNC_MS = 5 * 60 * 1000
+  var STALE_MS = 2 * 60 * 1000
+
+  // Each Google service gets its own icon and its own connection state,
+  // because a partial grant is a real outcome: the consent screen lets you
+  // approve mail and refuse calendar, and one merged indicator would hide it.
+  var SERVICES = [
+    { key: 'gmail', icon: '✉️', label: 'Gmail', what: 'inbox' },
+    { key: 'calendar', icon: '📅', label: 'Calendar', what: 'events' },
+  ]
+
   // ---- bridge handshake ---------------------------------------------------
 
   function getBridge() {
@@ -126,8 +140,14 @@
 
   // ---- the live strip -----------------------------------------------------
 
-  var strip, statusEl, connectBtn, syncBtn
+  var strip, statusEl, syncBtn
+  var chips = {}
   var busy = false
+  var autoTimer = null
+  var lastSyncAt = 0
+  // Last error per service, so a granted-but-failing service (scope approved,
+  // API disabled) reads as broken rather than as a reassuring tick.
+  var svcErrors = {}
 
   // Styles live here rather than in the theme file so the bridge stays one
   // droppable file; every value is a page token, so it themes itself.
@@ -145,6 +165,24 @@
     '.live-btn:hover{border-color:var(--accent)}',
     '.live-btn[disabled]{opacity:.6;cursor:default}',
     '.live-btn--primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}',
+    '.live-chip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;',
+    'padding:4px 9px;border-radius:999px;border:1px solid var(--line);',
+    'background:var(--surface-2);color:var(--muted);cursor:pointer}',
+    '.live-chip__icon{font-size:13px;line-height:1;filter:grayscale(1);opacity:.55}',
+    '.live-chip__state{font-weight:700;font-size:11px}',
+    '.live-chip--on{color:var(--ink);border-color:var(--low)}',
+    '.live-chip--on .live-chip__icon{filter:none;opacity:1}',
+    '.live-chip--on .live-chip__state{color:var(--low)}',
+    '.live-chip--off{color:var(--ink);border-color:var(--accent)}',
+    '.live-chip--off .live-chip__state{color:var(--accent)}',
+    '.live-chip--off:hover{background:var(--accent);color:var(--accent-ink)}',
+    '.live-chip--off:hover .live-chip__state{color:var(--accent-ink)}',
+    '.live-chip--sample .live-chip__state{color:var(--high)}',
+    '.live-chip--err{color:var(--ink);border-color:var(--critical)}',
+    '.live-chip--err .live-chip__state{color:var(--critical)}',
+    '.live-chip--err .live-chip__icon{filter:none;opacity:1}',
+    '.live-chip[disabled]{cursor:default}',
+    '.live-auto{color:var(--muted);font-size:11px}',
     '.live-section{margin-bottom:24px}',
     '.live-band{border-left-color:var(--accent)}',
     '.live-tag{font-size:10px;font-weight:700;text-transform:uppercase;margin-left:6px;',
@@ -169,16 +207,22 @@
     strip.id = 'live-strip'
 
     statusEl = el('span', 'live-status')
-    connectBtn = el('button', 'live-btn live-btn--primary', 'Connect Google')
-    connectBtn.type = 'button'
-    connectBtn.title = 'Grant read-only Gmail and Calendar access — one sign-in, shared with your dashboard widgets'
     syncBtn = el('button', 'live-btn', '↻ Sync now')
     syncBtn.type = 'button'
-    syncBtn.title = 'Pull the latest mail and calendar events into this page'
+    syncBtn.title = 'Pull the latest mail and calendar events in now'
 
     strip.appendChild(el('span', 'live-label', 'Live data'))
+    SERVICES.forEach(function (svc) {
+      var chip = el('button', 'live-chip')
+      chip.type = 'button'
+      chip.dataset.service = svc.key
+      chip.appendChild(el('span', 'live-chip__icon', svc.icon))
+      chip.appendChild(el('span', 'live-chip__label', svc.label))
+      chip.appendChild(el('span', 'live-chip__state', ''))
+      chips[svc.key] = chip
+      strip.appendChild(chip)
+    })
     strip.appendChild(statusEl)
-    strip.appendChild(connectBtn)
     strip.appendChild(syncBtn)
 
     masthead.insertBefore(strip, tabs)
@@ -206,11 +250,56 @@
     statusEl.className = 'live-status' + (tone ? ' live-status--' + tone : '')
   }
 
-  function showButtons(state) {
-    if (!connectBtn || !syncBtn) return
-    connectBtn.hidden = state !== 'disconnected'
-    syncBtn.hidden = state !== 'connected'
-    syncBtn.disabled = busy
+  /**
+   * Paint each service chip from the live status. This is the single place
+   * connection state reaches the UI, so it can never drift from what the
+   * bridge actually holds a token for.
+   */
+  function renderChips(st) {
+    SERVICES.forEach(function (svc) {
+      var chip = chips[svc.key]
+      if (!chip) return
+      var sample = st && st.mock
+      var on = st && st[svc.key]
+      var err = svcErrors[svc.key]
+      // A granted scope whose API still fails is NOT connected in any sense
+      // the reader cares about, so the error state outranks the tick.
+      var state = sample ? 'sample' : err ? 'err' : on ? 'on' : 'off'
+
+      chip.className = 'live-chip live-chip--' + state
+      chip.querySelector('.live-chip__state').textContent = {
+        sample: 'sample',
+        err: '!',
+        on: '✓',
+        off: 'Connect',
+      }[state]
+      // Retrying consent is the fix for a scope problem, so a failing chip
+      // stays clickable; a healthy or sample one has nothing to do.
+      chip.disabled = state === 'sample' || state === 'on'
+      chip.title = {
+        sample: svc.label + ': sample data — no Google Client ID configured',
+        err: svc.label + ': ' + err + ' (click to retry access)',
+        on: svc.label + ' connected (read-only) — keeping the ' + svc.what + ' up to date',
+        off: 'Connect ' + svc.label + ' (read-only) to load your ' + svc.what,
+      }[state]
+    })
+    if (syncBtn) {
+      syncBtn.hidden = !st || (!st.mock && !st.gmail && !st.calendar)
+      syncBtn.disabled = busy
+    }
+  }
+
+  /** Standalone page: no parent to connect through, so say so on the chips. */
+  function renderChipsUnavailable() {
+    SERVICES.forEach(function (svc) {
+      var chip = chips[svc.key]
+      if (!chip) return
+      chip.className = 'live-chip'
+      chip.querySelector('.live-chip__state').textContent = '—'
+      chip.disabled = true
+      chip.title = svc.label + ' needs the Nexus app, which is where sign-in lives'
+    })
+    if (syncBtn) syncBtn.hidden = true
   }
 
   // ---- live sections ------------------------------------------------------
@@ -389,7 +478,7 @@
 
   // ---- sync ---------------------------------------------------------------
 
-  function sync(bridge, interactiveAllowed) {
+  function sync(bridge) {
     if (busy) return Promise.resolve()
     busy = true
     if (syncBtn) syncBtn.disabled = true
@@ -408,12 +497,20 @@
         renderEvents(events.items || [], events.mock)
         rewirePage()
         syncScrollPadding()
+        lastSyncAt = Date.now()
 
-        var errors = [mail.error, events.error].filter(Boolean)
+        // Report per-service failures against the service that failed, so a
+        // working inbox is not hidden behind a calendar problem.
+        svcErrors.gmail = mail.error || null
+        svcErrors.calendar = events.error || null
+        renderChips(bridge.status())
+
+        var errors = []
+        if (mail.error) errors.push('Gmail: ' + mail.error)
+        if (events.error) errors.push('Calendar: ' + events.error)
+
         if (errors.length) {
-          setStatus(errors[0], 'warn')
-          // A dead token shows up as an error on both calls; offer the way back.
-          if (!interactiveAllowed) showButtons('disconnected')
+          setStatus(errors.join(' · '), 'warn')
         } else if (mock) {
           setStatus(
             'Sample data · ' + syncedAt() +
@@ -422,8 +519,8 @@
           )
         } else {
           setStatus(
-            'Connected · ' + (mail.items || []).length + ' messages · ' +
-              (events.items || []).length + ' events · ' + syncedAt(),
+            (mail.items || []).length + ' messages · ' +
+              (events.items || []).length + ' events · ' + syncedAt() + autoNote(),
             'ok',
           )
         }
@@ -437,52 +534,89 @@
       })
   }
 
+  // ---- automatic updates --------------------------------------------------
+
+  function autoNote() {
+    return autoTimer
+      ? ' · auto every ' + Math.round(AUTO_SYNC_MS / 60000) + ' min'
+      : ''
+  }
+
+  /** True once at least one service is connected and there is live data to pull. */
+  function canAutoSync(bridge) {
+    var st = bridge.status()
+    return !st.mock && (st.gmail || st.calendar)
+  }
+
+  /**
+   * Keep the page current on its own once connected. Idempotent — connecting
+   * the second service must not start a second timer.
+   */
+  function startAutoSync(bridge) {
+    if (autoTimer || !canAutoSync(bridge)) return
+    autoTimer = setInterval(function () {
+      // A hidden tab does not need fresh data, and polling one just spends
+      // API quota; visibilitychange below catches it up on return.
+      if (document.hidden || busy || !canAutoSync(bridge)) return
+      sync(bridge)
+    }, AUTO_SYNC_MS)
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden || busy || !canAutoSync(bridge)) return
+      if (Date.now() - lastSyncAt < STALE_MS) return
+      sync(bridge)
+    })
+  }
+
   // ---- boot ---------------------------------------------------------------
 
   function start() {
     var bridge = getBridge()
+    if (!buildStrip()) return
+
     if (!bridge) {
       // Opened as a standalone file: OAuth lives in the Nexus app, so there is
       // nothing to connect to here. Say so rather than leaving a user who
       // clicked "Open full page" wondering where the live sections went.
-      if (buildStrip()) {
-        showButtons('unavailable')
-        setStatus('Open this page inside Nexus for live Gmail and Calendar data', 'idle')
-      }
+      renderChipsUnavailable()
+      setStatus('Open this page inside Nexus for live Gmail and Calendar data', 'idle')
       return
     }
-    if (!buildStrip()) return
 
-    var st = bridge.status()
-
-    connectBtn.addEventListener('click', function () {
-      setStatus('Opening Google sign-in…')
-      connectBtn.disabled = true
-      // The click's user activation reaches the same-origin parent, so the
-      // consent popup opens there rather than being blocked in this frame.
-      bridge.connect().then(function (next) {
-        connectBtn.disabled = false
-        if (next.error) {
-          setStatus(next.error, 'warn')
-          showButtons('disconnected')
-          return
-        }
-        showButtons('connected')
-        sync(bridge, true)
+    SERVICES.forEach(function (svc) {
+      chips[svc.key].addEventListener('click', function () {
+        setStatus('Opening Google sign-in for ' + svc.label + '…')
+        chips[svc.key].disabled = true
+        // The click's user activation reaches the same-origin parent, so the
+        // consent popup opens there rather than being blocked in this frame.
+        // Ask only for this service: the other may already be granted, and a
+        // partial grant should be repairable one service at a time.
+        bridge.connect(svc.key).then(function (next) {
+          svcErrors[svc.key] = null
+          renderChips(next)
+          if (next.error) {
+            setStatus(next.error, 'warn')
+            return
+          }
+          startAutoSync(bridge)
+          sync(bridge)
+        })
       })
     })
 
     syncBtn.addEventListener('click', function () {
-      sync(bridge, true)
+      sync(bridge)
     })
 
-    if (st.mock || (st.gmail && st.calendar)) {
-      // Sample mode, or consent already granted — show data immediately.
-      showButtons('connected')
-      sync(bridge, false)
+    var st = bridge.status()
+    renderChips(st)
+
+    if (st.mock || st.gmail || st.calendar) {
+      // Sample mode, or at least one service already granted — show data now.
+      startAutoSync(bridge)
+      sync(bridge)
     } else {
-      showButtons('disconnected')
-      setStatus('Not connected — Gmail and Calendar are read-only', 'idle')
+      setStatus('Not connected — both are read-only, and update themselves once granted', 'idle')
     }
   }
 

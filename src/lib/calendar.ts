@@ -70,6 +70,46 @@ interface RawEvent {
   end?: { dateTime?: string; date?: string }
 }
 
+/**
+ * A bare status code is not actionable here: a Calendar 403 is almost always
+ * one of two very different problems — the API is not enabled on the Cloud
+ * project, or the token lacks the calendar scope because consent was declined
+ * for it — and Google says which in the error body. Surface that.
+ */
+async function calendarError(res: Response): Promise<Error> {
+  let detail = ''
+  let reason = ''
+  try {
+    const body = (await res.json()) as {
+      error?: {
+        message?: string
+        status?: string
+        errors?: { reason?: string }[]
+      }
+    }
+    detail = body?.error?.message ?? ''
+    reason = body?.error?.errors?.[0]?.reason ?? body?.error?.status ?? ''
+  } catch {
+    /* non-JSON body — fall back to the status code alone */
+  }
+
+  if (res.status === 403) {
+    if (/has not been used in project|is disabled/i.test(detail)) {
+      return new Error(
+        'the Google Calendar API is not enabled for this OAuth client\u2019s Cloud project — enable it in Google Cloud, then reconnect',
+      )
+    }
+    if (/insufficient|scope/i.test(detail + reason)) {
+      return new Error(
+        'access was not granted for Calendar — reconnect and leave the calendar permission ticked',
+      )
+    }
+  }
+  return new Error(
+    detail ? `Calendar API error (${res.status}): ${detail}` : `Calendar API error (${res.status})`,
+  )
+}
+
 async function calendarFetch<T>(token: string, url: URL): Promise<T> {
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
@@ -78,7 +118,7 @@ async function calendarFetch<T>(token: string, url: URL): Promise<T> {
     clearScopeToken(CALENDAR_SCOPE)
     throw new Error('Calendar session expired — reconnect required')
   }
-  if (!res.ok) throw new Error(`Calendar API error (${res.status})`)
+  if (!res.ok) throw await calendarError(res)
   return (await res.json()) as T
 }
 
@@ -229,13 +269,19 @@ export async function fetchUpcomingEvents(
         c.summaryOverride || c.summary || c.id,
         now.toISOString(),
         until.toISOString(),
-      ).catch(() => [] as CalendarEvent[]),
+      ).catch((err: unknown) => (err instanceof Error ? err : new Error('failed'))),
     ),
   )
 
-  const events = perCalendar
-    .flat()
-    .sort((a, b) => a.start.localeCompare(b.start))
+  // One unreadable calendar must not sink the whole sweep — but if EVERY
+  // calendar failed, that is a real problem (a missing scope, a disabled API)
+  // and reporting "no events" would be a lie.
+  const ok = perCalendar.filter((r): r is CalendarEvent[] => Array.isArray(r))
+  if (ok.length === 0 && perCalendar.length > 0) {
+    throw perCalendar[0] as Error
+  }
+
+  const events = ok.flat().sort((a, b) => a.start.localeCompare(b.start))
 
   return { events: limit ? events.slice(0, limit) : events, mock: false }
 }

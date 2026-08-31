@@ -54,7 +54,17 @@ iframe, so it calls up to `window.__nexusBriefing` on the parent
 (`src/lib/briefingBridge.ts`), which fronts the app's Gmail client and the
 Calendar client built on the same OAuth layer. It adds:
 
-- a **Live data** strip under the masthead: connect, sync, and status;
+- a **Live data** strip under the masthead: one chip per service — ✉️ Gmail and
+  📅 Calendar — plus status and a manual sync. Each service connects on its own
+  because Google's consent screen lets you approve one scope and refuse the
+  other, and a single merged indicator would hide that. A chip shows `!` when
+  its scope is granted but the API still fails (the classic case: the Calendar
+  API is not enabled on the Cloud project) — a granted-but-broken service must
+  not read as a reassuring tick — and stays clickable to retry consent;
+- **automatic updates**: once a service is connected the page re-syncs every 5
+  minutes on its own. Polling pauses while the tab is hidden rather than
+  spending API quota on a background tab, and catches up on return if the last
+  sync is more than 2 minutes old;
 - a **Live inbox** section at the top of Actions & Inbox — the top messages of
   the last 72 hours, ranked by the dashboard's own priority score;
 - a **Live calendar** section at the top of Calendar — the next 14 days across
