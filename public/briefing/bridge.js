@@ -29,7 +29,7 @@
     { key: '24h', label: '24 hours', hours: 24, limit: 12, candidates: 40 },
     { key: '7d', label: '7 days', hours: 24 * 7, limit: 20, candidates: 80 },
     { key: '30d', label: '30 days', hours: 24 * 30, limit: 30, candidates: 120 },
-    { key: '90d', label: '90 days', hours: 24 * 90, limit: 40, candidates: 150 },
+    { key: '90d', label: '90 days', hours: 24 * 90, limit: 40, candidates: 120 },
     { key: 'custom', label: 'Custom…', hours: 0, limit: 30, candidates: 120 },
   ]
   var DEFAULT_RANGE = '7d'
@@ -192,7 +192,7 @@
       hours: days * 24,
       // Scale the pool with the window, on the same curve as the presets.
       limit: Math.min(40, Math.max(12, Math.round(days * 1.2))),
-      candidates: Math.min(150, Math.max(40, days * 4)),
+      candidates: Math.min(120, Math.max(40, days * 4)),
     }
   }
 
@@ -270,6 +270,8 @@
   // Last error per service, so a granted-but-failing service (scope approved,
   // API disabled) reads as broken rather than as a reassuring tick.
   var svcErrors = {}
+  /** Last synced payload, so punch-list-driven re-renders keep their numbers. */
+  var lastData = { events: [], mail: [] }
 
   // Styles live here rather than in the theme file so the bridge stays one
   // droppable file; every value is a page token, so it themes itself.
@@ -306,6 +308,25 @@
     '.live-chip[disabled]{cursor:default}',
     '.live-auto{color:var(--muted);font-size:11px}',
     '.live-sep{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}',
+    '.sync-stamp{text-align:right;margin-bottom:6px}',
+    '.sync-stamp__label{font-size:10px;font-weight:700;letter-spacing:.08em;',
+    'text-transform:uppercase;color:var(--muted)}',
+    '.sync-stamp__when{font-size:20px;font-weight:700;line-height:1.15;color:var(--ink);',
+    'font-family:"IBM Plex Mono",monospace}',
+    '.sync-stamp__new{font-size:12px;color:var(--accent);font-weight:600;margin-top:2px}',
+    '.sync-stamp__new--quiet{color:var(--muted);font-weight:400}',
+    '.sweep-stamp{font-size:11px;color:var(--muted)}',
+    '.stat-rows{max-width:1180px;margin:18px auto 0}',
+    '.stat-row{margin:0;border-radius:0}',
+    '.stat-rows .stat-row:first-child{border-radius:10px 10px 0 0}',
+    '.stat-rows .stat-row+.stat-row{border-top:none}',
+    '.stat-row--punch{grid-template-columns:repeat(4,minmax(0,1fr))}',
+    '.stat-row--cal{grid-template-columns:repeat(3,minmax(0,1fr)) 1.4fr}',
+    '.stat-row--mail{grid-template-columns:1fr}',
+    '@media (max-width:860px){.stat-row--punch,.stat-row--cal{',
+    'grid-template-columns:repeat(2,minmax(0,1fr))}}',
+    '.stat-cats{font-family:"IBM Plex Mono",monospace;font-size:12.5px;',
+    'color:var(--ink);margin-top:2px}',
     '.live-select,.live-days{font:inherit;font-size:12px;padding:4px 6px;border-radius:8px;',
     'border:1px solid var(--line);background:var(--surface-2);color:var(--ink)}',
     '.live-days{width:64px}',
@@ -366,6 +387,41 @@
     '.mon-msg__when{color:var(--muted);font-weight:400;margin-left:8px;',
     'font-family:"IBM Plex Mono",monospace;font-size:11px}',
     '.mon-msg__snippet{color:var(--muted);font-size:12px;margin:2px 0 3px}',
+
+    '.mon-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;',
+    'align-items:start}',
+    '@media (max-width:1000px){.mon-board{grid-template-columns:repeat(2,minmax(0,1fr))}}',
+    '@media (max-width:620px){.mon-board{grid-template-columns:1fr}}',
+    '.mon-col__head{font-weight:700;font-size:12px;text-transform:uppercase;',
+    'letter-spacing:.05em;padding:0 2px 8px;display:flex;justify-content:space-between;',
+    'align-items:center;border-bottom:2px solid var(--line);margin-bottom:10px}',
+    '.mon-col--critical .mon-col__head{color:var(--critical);border-bottom-color:var(--critical)}',
+    '.mon-col--high .mon-col__head{color:var(--high);border-bottom-color:var(--high)}',
+    '.mon-col--medium .mon-col__head{color:var(--medium);border-bottom-color:var(--medium)}',
+    '.mon-col--low .mon-col__head{color:var(--low);border-bottom-color:var(--low)}',
+    '.mon-col__count{font-family:"IBM Plex Mono",monospace;font-size:12px}',
+    '.mon-col__empty{color:var(--muted);font-size:12px;padding:6px 2px}',
+    // The tile IS the severity: a solid ground, not a stripe on black.
+    '.mon-tile{border-radius:10px;padding:11px 12px;margin-bottom:10px;',
+    'box-shadow:var(--shadow);border:1px solid transparent}',
+    '.mon-tile--critical{background:var(--critical);color:#170a0a}',
+    '.mon-tile--high{background:var(--high);color:#1c1305}',
+    '.mon-tile--medium{background:var(--medium);color:#08131c}',
+    '.mon-tile--low{background:var(--low);color:#07160d}',
+    '.mon-tile__title{font-weight:700;font-size:13.5px;line-height:1.3}',
+    // Everything inside inherits the tile ink, at reduced weight, so the
+    // colour keeps its meaning instead of fighting the page tokens.
+    '.mon-tile__meta{font-size:11.5px;opacity:.78;margin-top:3px}',
+    '.mon-tile__chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}',
+    '.mon-tile .mon-chip{border-color:currentColor;color:inherit;opacity:.85}',
+    '.mon-tile .cat-links{margin-top:7px}',
+    '.mon-tile .mail-link,.mon-tile .cal-btn{color:inherit;text-decoration:underline}',
+    '.mon-tile .mon-thread-toggle{color:inherit;opacity:.9}',
+    '.mon-tile .mon-thread{border-top-color:currentColor}',
+    '.mon-tile .note,.mon-tile .mon-msg__snippet,.mon-tile .mon-msg__when{color:inherit;opacity:.75}',
+    '.mon-tile .mon-timeline{border-left-color:currentColor}',
+    '.mon-tile .mon-msg::before{background:currentColor}',
+    '.mon-tile.is-done{opacity:.55}',
   ].join('')
 
   function injectStyles() {
@@ -567,7 +623,8 @@
     }
   }
 
-  function renderMail(items, mock) {
+  function renderMail(items, mock, newIds) {
+    var fresh = newIds || []
     var host = ensureSection({
       panelId: 'panel-actions',
       id: 'live-inbox',
@@ -614,6 +671,7 @@
         '<div class="cat-main">' +
         '<div class="cat-title">' + esc(m.subject) + '</div>' +
         '<div class="cat-meta">' + sevPill(sev) + ' ' +
+        (fresh.indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
         (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
         link +
         '</div></div>'
@@ -623,7 +681,8 @@
     setCount('live-inbox', items.length)
   }
 
-  function renderEvents(items, mock) {
+  function renderEvents(items, mock, newIds) {
+    var fresh = newIds || []
     var host = ensureSection({
       panelId: 'panel-calendar',
       id: 'live-calendar',
@@ -654,6 +713,7 @@
         '<div class="cat-main">' +
         '<div class="cat-title">' + esc(e.title) + '</div>' +
         '<div class="cat-meta">' + sevPill(sev) + ' ' +
+        (fresh.indexOf(e.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
         (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
         link +
         '</div></div>'
@@ -846,6 +906,229 @@
   }
 
 
+
+  // ---- masthead: sync stamp + the stat strip ------------------------------
+
+  var LAST_SYNC_KEY = 'ak-briefing-last-sync'
+  var SEEN_KEY = 'ak-briefing-seen'
+
+  function lastSyncStamp() {
+    var raw = readStored(LAST_SYNC_KEY, '')
+    var t = raw ? new Date(raw) : null
+    return t && !isNaN(t.getTime()) ? t : null
+  }
+
+  /**
+   * Ids seen on the previous sync, so "new since last time" is a real diff
+   * rather than a guess from timestamps — an email that arrived while the tab
+   * was closed is new to the reader even if it is two days old.
+   */
+  function loadSeen() {
+    try {
+      var parsed = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}')
+      return { mail: parsed.mail || [], events: parsed.events || [] }
+    } catch (e) {
+      return { mail: [], events: [] }
+    }
+  }
+
+  function saveSeen(mailIds, eventIds) {
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify({ mail: mailIds, events: eventIds }))
+    } catch (e) {}
+  }
+
+  function diffNew(current, previous) {
+    if (!previous.length) return []   // first sync: nothing is "new" yet
+    return current.filter(function (id) {
+      return previous.indexOf(id) === -1
+    })
+  }
+
+  /** Replace the masthead date line with a prominent last-sync stamp. */
+  function renderSyncStamp(newMail, newEvents) {
+    var asof = document.getElementById('data-asof')
+    if (!asof) return
+    var host = document.getElementById('sync-stamp')
+    if (!host) {
+      host = el('div', 'sync-stamp')
+      host.id = 'sync-stamp'
+      asof.parentNode.insertBefore(host, asof)
+      // The sweep date still matters — it dates the curated sections below —
+      // but it is no longer the headline, because it is not what changes.
+      asof.classList.add('sweep-stamp')
+    }
+    var t = lastSyncStamp()
+    var when = t
+      ? t.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) +
+        ' · ' + t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : 'never'
+    var bits = []
+    if (newMail && newMail.length) bits.push(newMail.length + ' new email' + (newMail.length === 1 ? '' : 's'))
+    if (newEvents && newEvents.length) bits.push(newEvents.length + ' calendar update' + (newEvents.length === 1 ? '' : 's'))
+
+    host.innerHTML =
+      '<div class="sync-stamp__label">Last sync</div>' +
+      '<div class="sync-stamp__when">' + esc(when) + '</div>' +
+      (bits.length
+        ? '<div class="sync-stamp__new">🆕 ' + esc(bits.join(' · ')) + ' since last sync</div>'
+        : '<div class="sync-stamp__new sync-stamp__new--quiet">Nothing new since last sync</div>')
+  }
+
+  // ---- stat strip ---------------------------------------------------------
+
+  /**
+   * A recurring block on the calendar is a routine, not a meeting — counting
+   * standups and "focus time" as meetings makes the number useless for
+   * deciding whether a week is overloaded.
+   */
+  var ROUTINE = /\b(routine|block|focus|lunch|break|gym|workout|commute|travel time|prep|hold|busy|ooo|out of office|do not schedule|reminder|birthday|holiday)\b/i
+
+  function isMeeting(ev) {
+    if (ev.allDay) return false
+    if (ROUTINE.test(ev.title || '')) return false
+    return true
+  }
+
+  function hoursOf(ev) {
+    var a = new Date(ev.start).getTime()
+    var b = new Date(ev.end).getTime()
+    if (!isFinite(a) || !isFinite(b) || b <= a) return 0
+    return (b - a) / 3600000
+  }
+
+  function fmtHours(h) {
+    if (!h) return '0h'
+    var whole = Math.floor(h)
+    var mins = Math.round((h - whole) * 60)
+    return whole + 'h' + (mins ? ' ' + mins + 'm' : '')
+  }
+
+  /** Bucket an event with the page's own category vocabulary. */
+  function eventCategory(ev) {
+    if (typeof inferCategory === 'function') {
+      try {
+        return inferCategory(document.createElement('div'), ev.title || '')
+      } catch (e) {}
+    }
+    return 'personal'
+  }
+
+  function punchCounts() {
+    var out = { total: 0, critical: 0, high: 0, medium: 0 }
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done) return
+        out.total++
+        if (e.severity === 'critical') out.critical++
+        else if (e.severity === 'high') out.high++
+        else if (e.severity === 'medium') out.medium++
+      })
+    } catch (e) {}
+    return out
+  }
+
+  function statHtml(value, label, color) {
+    return '<div class="stat"><div class="n mono"' +
+      (color ? ' style="color:' + color + '"' : '') + '>' + value + '</div>' +
+      '<div class="l">' + label + '</div></div>'
+  }
+
+  /**
+   * The punch-list counters are the reason the strip exists, and the punch
+   * list changes constantly — every checkbox on the page writes to it. Watch
+   * the list itself rather than trying to hook each of the page's own paths
+   * into it, which would break the moment a rebuild reorganises them.
+   */
+  function watchPunchList(bridge) {
+    var root = document.getElementById('punchlist-root')
+    if (!root || typeof MutationObserver !== 'function') return
+    var queued = false
+    new MutationObserver(function () {
+      if (queued) return
+      queued = true
+      // Coalesce: one toggle can rewrite the whole list.
+      setTimeout(function () {
+        queued = false
+        renderStats(lastData.events, lastData.mail)
+        renderMonitor(bridge)
+      }, 60)
+    }).observe(root, { childList: true, subtree: true })
+  }
+
+  function renderStats(events, mail) {
+    var strips = document.querySelector('.masthead .stat-strip')
+    if (!strips) return
+    var p = punchCounts()
+
+    var upcoming = (events || []).filter(function (ev) {
+      return new Date(ev.start).getTime() >= Date.now()
+    })
+    var meetings = upcoming.filter(isMeeting)
+
+    // "Upcoming week" = the next 7 days, which is the horizon the time-per-
+    // category split is meant to help you plan against.
+    var weekEnd = Date.now() + 7 * 86400000
+    var inWeek = meetings.filter(function (ev) {
+      return new Date(ev.start).getTime() <= weekEnd
+    })
+    var byCat = {}
+    var weekHours = 0
+    inWeek.forEach(function (ev) {
+      var h = hoursOf(ev)
+      weekHours += h
+      var c = eventCategory(ev)
+      byCat[c] = (byCat[c] || 0) + h
+    })
+    var catBits = Object.keys(byCat)
+      .sort(function (a, b) { return byCat[b] - byCat[a] })
+      .slice(0, 5)
+      .map(function (c) { return esc(c) + ' ' + fmtHours(byCat[c]) })
+
+    var dayAgo = Date.now() - 86400000
+    var last24 = (mail || []).filter(function (m) {
+      return new Date(m.date).getTime() >= dayAgo
+    })
+
+    var row1 =
+      '<div class="stat-strip stat-row stat-row--punch">' +
+      statHtml(p.total, '📋 On punch list') +
+      statHtml(p.critical, 'Critical', 'var(--critical)') +
+      statHtml(p.high, 'High', 'var(--high)') +
+      statHtml(p.medium, 'Medium', 'var(--medium)') +
+      '</div>'
+
+    var row2 =
+      '<div class="stat-strip stat-row stat-row--cal">' +
+      statHtml(upcoming.length, '📅 Events coming up') +
+      statHtml(meetings.length, 'Meetings (routines excluded)') +
+      statHtml(fmtHours(weekHours), 'Proposed meeting time, next 7 days') +
+      '<div class="stat stat--wide"><div class="l">Time per category, next 7 days</div>' +
+      '<div class="stat-cats">' +
+      (catBits.length ? catBits.join(' · ') : 'nothing scheduled') +
+      '</div></div>' +
+      '</div>'
+
+    var row3 =
+      '<div class="stat-strip stat-row stat-row--mail">' +
+      statHtml(last24.length, '✉️ New emails, last 24 hours') +
+      '</div>'
+
+    var wrap = document.getElementById('stat-rows')
+    if (!wrap) {
+      wrap = el('div', 'stat-rows')
+      wrap.id = 'stat-rows'
+      strips.parentNode.insertBefore(wrap, strips)
+      // The page's own strip is superseded. `hidden` is not enough: the
+      // attribute's display:none comes from the UA sheet and loses to the
+      // page's `.stat-strip { display: grid }`.
+      strips.style.display = 'none'
+    }
+    wrap.innerHTML = row1 + row2 + row3
+    syncScrollPadding()
+  }
+
   // ---- Monitor tab: filters, thread timelines, history --------------------
 
   var STATUS_FILTERS = [
@@ -1012,44 +1295,70 @@
       return
     }
 
-    results.innerHTML = entries
-      .map(function (pair) {
-        var id = pair[0]
-        var e = pair[1]
-        var st = statusLabel(statusOf(id))
-        var emailId = emailIdFor(id, e, bridge)
-        var linksHtml = (e.links || [])
-          .map(function (l) {
-            return '<a class="mail-link" href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'
-          })
-          .join(' ')
-        var cached = threadCache[emailId]
+    // A severity board: one column per level, and each tile carries its
+    // severity as its whole background rather than a stripe or a word, so the
+    // shape of the week reads before any of it is actually read.
+    var COLUMNS = [
+      { key: 'critical', label: 'Critical' },
+      { key: 'high', label: 'High' },
+      { key: 'medium', label: 'Medium' },
+      { key: 'low', label: 'Low' },
+    ]
+    var buckets = { critical: [], high: [], medium: [], low: [] }
+    entries.forEach(function (pair) {
+      var sev = pair[1].severity
+      ;(buckets[sev] || buckets.low).push(pair)
+    })
+
+    results.innerHTML =
+      '<div class="mon-board">' +
+      COLUMNS.map(function (col) {
+        var items = buckets[col.key]
         return (
-          '<div class="mon-row sev-' + esc(e.severity || 'low') + '">' +
-          '<div class="mon-row__head">' +
-          '<span class="mon-row__title">' + esc(e.title) + '</span>' +
-          sevPill(e.severity || 'low') +
-          (st ? '<span class="mon-chip">' + esc(st) + '</span>' : '') +
-          (e.done ? '<span class="mon-chip mon-chip--done">✓ done</span>' : '') +
-          (own.items[id] ? '<span class="live-tag">yours</span>' : '') +
-          '</div>' +
-          '<div class="mon-row__meta">' + esc(e.category || '') +
-          (e.addedAt ? ' · added ' + esc(e.addedAt) : '') +
-          ((e.subs || []).length ? ' · ' + e.subs.length + ' steps' : '') +
-          '</div>' +
-          (linksHtml ? '<div class="cat-links">' + linksHtml + '</div>' : '') +
-          (emailId
-            ? '<details class="mon-thread"' + (cached ? ' open' : '') + '>' +
-              '<summary class="mon-thread-toggle" data-id="' + esc(id) + '" data-email="' + esc(emailId) + '">' +
-              '🧵 Thread history</summary>' +
-              '<div class="mon-thread__body" data-for="' + esc(emailId) + '">' +
-              (cached ? threadHtml(cached) : '<span class="note">Loading…</span>') +
-              '</div></details>'
-            : '') +
+          '<div class="mon-col mon-col--' + col.key + '">' +
+          '<div class="mon-col__head">' + esc(col.label) +
+          '<span class="mon-col__count">' + items.length + '</span></div>' +
+          (items.length
+            ? items.map(function (pair) { return tileHtml(pair[0], pair[1], bridge) }).join('')
+            : '<div class="mon-col__empty">None</div>') +
           '</div>'
         )
+      }).join('') +
+      '</div>'
+  }
+
+  function tileHtml(id, e, bridge) {
+    var sev = e.severity || 'low'
+    var st = statusLabel(statusOf(id))
+    var emailId = emailIdFor(id, e, bridge)
+    var linksHtml = (e.links || [])
+      .map(function (l) {
+        return '<a class="mail-link" href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'
       })
-      .join('')
+      .join(' ')
+    var cached = threadCache[emailId]
+    return (
+      '<div class="mon-tile mon-tile--' + esc(sev) + (e.done ? ' is-done' : '') + '">' +
+      '<div class="mon-tile__title">' + esc(e.title) + '</div>' +
+      '<div class="mon-tile__meta">' + esc(e.category || '') +
+      (e.addedAt ? ' · ' + esc(e.addedAt) : '') +
+      ((e.subs || []).length ? ' · ' + e.subs.length + ' steps' : '') + '</div>' +
+      '<div class="mon-tile__chips">' +
+      (st ? '<span class="mon-chip">' + esc(st) + '</span>' : '') +
+      (e.done ? '<span class="mon-chip mon-chip--done">✓ done</span>' : '') +
+      (own.items[id] ? '<span class="mon-chip">yours</span>' : '') +
+      '</div>' +
+      (linksHtml ? '<div class="cat-links">' + linksHtml + '</div>' : '') +
+      (emailId
+        ? '<details class="mon-thread"' + (cached ? ' open' : '') + '>' +
+          '<summary class="mon-thread-toggle" data-id="' + esc(id) + '" data-email="' + esc(emailId) + '">' +
+          '🧵 Thread history</summary>' +
+          '<div class="mon-thread__body" data-for="' + esc(emailId) + '">' +
+          (cached ? threadHtml(cached) : '<span class="note">Loading…</span>') +
+          '</div></details>'
+        : '') +
+      '</div>'
+    )
   }
 
   function loadThread(bridge, id, emailId) {
@@ -1121,10 +1430,31 @@
         var events = res[1]
         var mock = mail.mock || events.mock
 
-        renderMail(mail.items || [], mail.mock)
-        renderEvents(events.items || [], events.mock)
+        var mailItems = mail.items || []
+        var eventItems = events.items || []
+
+        // Diff against what the previous sync saw BEFORE recording this one.
+        var seen = loadSeen()
+        var mailIds = mailItems.map(function (m) { return m.id })
+        var eventIds = eventItems.map(function (e) { return e.id })
+        var newMail = diffNew(mailIds, seen.mail)
+        var newEvents = diffNew(eventIds, seen.events)
+
+        renderMail(mailItems, mail.mock, newMail)
+        renderEvents(eventItems, events.mock, newEvents)
         rewirePage()
+        lastData = { events: eventItems, mail: mailItems }
         renderMonitor(bridge)
+        renderStats(eventItems, mailItems)
+
+        // Only a sync that actually reached both services should redefine the
+        // baseline; recording a failed one would swallow the diff.
+        if (!mail.error && !events.error) {
+          saveSeen(mailIds, eventIds)
+          writeStored(LAST_SYNC_KEY, new Date().toISOString())
+        }
+        renderSyncStamp(newMail, newEvents)
+
         syncScrollPadding()
         lastSyncAt = Date.now()
 
@@ -1266,6 +1596,9 @@
     buildMonitorTab(bridge)
     applyOwnItems()
     renderMonitor(bridge)
+    renderSyncStamp([], [])
+    renderStats([], [])
+    watchPunchList(bridge)
 
     var st = bridge.status()
     renderChips(st)

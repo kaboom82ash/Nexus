@@ -43,6 +43,21 @@ unset secret renders as an empty string, an existing env var outranks the
 `.env` file in Vite, and the deployed site would silently fall back to sample
 data.
 
+## Passcode gate
+
+The app sits behind a passcode (`src/components/PasscodeGate.tsx`). Set
+`VITE_APP_PASSCODE_HASH` to gate every visitor with one passcode; leave it unset
+and each browser sets its own on first use, which locks the app on that device.
+
+**This is a deterrent, not access control.** Nexus is a static site: every file
+it serves — `weekly-briefing.html` and its contents included — can be fetched
+directly by URL, and the gate is client-side code the visitor's own browser
+runs. It stops someone opening the app on your unlocked laptop, and a casual
+visitor who lands on the URL. It does not stop anyone willing to open devtools
+or request the HTML directly, and it cannot: there is no server here to withhold
+anything. Real protection means a private repository, or a host that
+authenticates before serving bytes.
+
 ## Tile dashboards
 
 Every other tab is a page holding a **5 × 5 grid of 25 tiles**; add more tabs

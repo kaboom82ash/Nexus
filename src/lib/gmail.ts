@@ -649,7 +649,7 @@ export function gmailWebUrl(messageId: string): string {
 /** How many recent messages we score before taking the top N. */
 const SCORE_CANDIDATE_CAP = 40
 /** Ceiling on the scoring pool — one metadata request each, so this is latency. */
-const SCORE_CANDIDATE_MAX = 150
+const SCORE_CANDIDATE_MAX = 120
 
 const TRANSACTIONAL =
   /\b(order|ordered|receipt|payment|paid|invoice|statement|refund|shipped|delivery|delivered|confirmation|confirmed|venmo|paypal|klarna|zelle|deposit|transfer|bank|billing|charged)\b/i
@@ -765,6 +765,63 @@ async function listMessageIds(
   return ids.slice(0, cap)
 }
 
+/**
+ * Gmail enforces a per-user rate limit (250 quota units/second), and one
+ * metadata read is 5 units. Firing a whole candidate pool at once trips it and
+ * comes back 429 — so requests go out a few at a time, and a 429 or a 5xx is
+ * retried with exponential backoff plus jitter rather than surfaced.
+ *
+ * Retry-After is honoured when Google sends it; the jitter matters because a
+ * batch that all backs off on the same schedule just collides again.
+ */
+const REQUEST_CONCURRENCY = 5
+const MAX_RETRIES = 4
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+async function fetchRetrying(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let wait = 400
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init)
+    const retryable = res.status === 429 || (res.status >= 500 && res.status < 600)
+    if (!retryable || attempt >= MAX_RETRIES) return res
+
+    const header = Number(res.headers.get('retry-after'))
+    const delay = Number.isFinite(header) && header > 0
+      ? header * 1000
+      : wait + Math.random() * wait
+    await sleep(delay)
+    wait *= 2
+  }
+}
+
+/** Run `fn` over `items` a few at a time, preserving input order. */
+async function mapLimited<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      for (;;) {
+        const i = next++
+        if (i >= items.length) return
+        out[i] = await fn(items[i])
+      }
+    },
+  )
+  await Promise.all(workers)
+  return out
+}
+
 async function getMessageMeta(
   token: string,
   id: string,
@@ -776,12 +833,17 @@ async function getMessageMeta(
   for (const h of ['From', 'Subject', 'Date', 'List-Unsubscribe']) {
     url.searchParams.append('metadataHeaders', h)
   }
-  const res = await fetch(url.toString(), {
+  const res = await fetchRetrying(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (res.status === 401) {
     setCachedToken(null)
     throw new Error('Gmail session expired — reconnect required')
+  }
+  if (res.status === 429) {
+    throw new Error(
+      'Gmail is rate-limiting this account — try a shorter window, or wait a minute and sync again',
+    )
   }
   if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
   return (await res.json()) as GmailMessageMeta
@@ -863,7 +925,9 @@ export async function fetchTopEmails(
     SCORE_CANDIDATE_MAX,
   )
   const ids = await listMessageIds(token, query, pool)
-  const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
+  const metas = await mapLimited(ids, REQUEST_CONCURRENCY, (id) =>
+    getMessageMeta(token, id),
+  )
   const emails = metas
     .map(metaToSummary)
     .sort((a, b) => b.score - a.score || b.date.localeCompare(a.date))
@@ -1207,7 +1271,9 @@ export async function fetchEmailPage(
     search?.trim() ? ` ${search.trim()}` : ''
   }${filterFragment(filter)}`
   const { ids, nextPageToken } = await listPage(token, q, pageToken, pageSize)
-  const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
+  const metas = await mapLimited(ids, REQUEST_CONCURRENCY, (id) =>
+    getMessageMeta(token, id),
+  )
   const emails = metas.map(metaToSummary)
   return { emails, nextPageToken, mock: false }
 }

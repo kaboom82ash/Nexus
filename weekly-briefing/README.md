@@ -49,7 +49,15 @@ works standalone and a weekly rebuild does not disturb them:
 **`theme.css`** — the page tokenizes its whole palette, so restating those
 tokens is the entire theme. Nothing here targets the page's markup.
 
-**`bridge.js`** — live Gmail and Calendar. The page runs in a same-origin
+**`bridge.js`** — live Gmail and Calendar. It also rebuilds the masthead: a
+prominent **Last sync** stamp with what arrived since the previous sync (a real
+id diff, not a timestamp guess — mail that landed while the tab was shut is new
+to the reader whatever its date), and three stat rows replacing the page's own
+strip — punch list totals by severity; upcoming calendar events with a meetings
+count that excludes routines, proposed meeting time and hours per category for
+the next 7 days; then new emails in the last 24 hours. The page's original strip
+is hidden with an inline style, not the `hidden` attribute, whose UA-sheet
+`display:none` loses to the page's own `display:grid`. The page runs in a same-origin
 iframe, so it calls up to `window.__nexusBriefing` on the parent
 (`src/lib/briefingBridge.ts`), which fronts the app's Gmail client and the
 Calendar client built on the same OAuth layer. It adds:
