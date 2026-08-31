@@ -374,13 +374,17 @@
     }
   }
 
-  function stampAsOf(mock) {
-    var asof = document.getElementById('data-asof')
-    if (!asof) return
-    var now = new Date()
-    var when = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) +
-      ' · ' + now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    asof.textContent = (mock ? 'Sample data · ' : 'Live data as of ') + when
+  /*
+   * The masthead's "Data as of" stamp belongs to the SWEEP that generated this
+   * page's curated content, and a sync does not refresh that content — only the
+   * two live sections. Overwriting it with the sync time makes a week-old
+   * briefing look current, so the sync time is reported in the strip instead.
+   */
+  function syncedAt() {
+    return 'synced ' + new Date().toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
   }
 
   // ---- sync ---------------------------------------------------------------
@@ -403,7 +407,6 @@
         renderMail(mail.items || [], mail.mock)
         renderEvents(events.items || [], events.mock)
         rewirePage()
-        stampAsOf(mock)
         syncScrollPadding()
 
         var errors = [mail.error, events.error].filter(Boolean)
@@ -413,13 +416,14 @@
           if (!interactiveAllowed) showButtons('disconnected')
         } else if (mock) {
           setStatus(
-            'Sample data — add a Google Client ID in Nexus settings for live mail and calendar',
+            'Sample data · ' + syncedAt() +
+              ' — add a Google Client ID in Nexus settings for live mail and calendar',
             'mock',
           )
         } else {
           setStatus(
             'Connected · ' + (mail.items || []).length + ' messages · ' +
-              (events.items || []).length + ' events',
+              (events.items || []).length + ' events · ' + syncedAt(),
             'ok',
           )
         }
