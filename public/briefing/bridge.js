@@ -362,6 +362,46 @@
     'border:1px solid var(--line);background:transparent;color:var(--accent);cursor:pointer}',
     '.live-attach:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}',
 
+    // One email per line: date, sender, subject, then every action inline.
+    '.cat-grid-items:has(.mail-line){display:block;padding:0}',
+    '.cat-grid-items .cat-row.mail-line{max-width:none;width:100%;flex:none;',
+    'display:block;margin:0 0 6px;padding:8px 12px}',
+    '.mail-line__main{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
+    '.mail-line__when{flex:0 0 104px;font-size:11px;opacity:.85}',
+    '.mail-line__from{flex:0 1 130px;font-size:12px;font-weight:600;overflow:hidden;',
+    'text-overflow:ellipsis;white-space:nowrap}',
+    '.mail-line__subj{flex:1 1 auto;min-width:80px;font-size:13px;font-weight:600;',
+    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.mail-line__tags{display:flex;gap:5px;align-items:center;flex:0 0 auto}',
+    '.mail-line .cat-links{display:flex;gap:6px;align-items:center;margin:0;flex:0 0 auto}',
+    '.mail-line .close-btn{margin-left:0;padding:2px 7px}',
+    '.mail-line .cat-links>*{padding:2px 7px;font-size:13px;line-height:1.5;',
+    'text-decoration:none;border-radius:6px;border:1px solid currentColor}',
+    // The band's label rail stretches to the tallest child; with single-line
+    // rows that left a large empty block under one email.
+    '.cat-grid-band:has(.mail-line){align-items:start}',
+    '.cat-grid-items:has(.mail-line){padding:6px}',
+    // With one-line rows the label rail is the tallest thing in the band and
+    // was setting its height, leaving dead space beside a single email.
+    '.cat-grid-band:has(.mail-line) .cat-grid-label{padding:8px 10px;',
+    'flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap}',
+    '.cat-grid-band:has(.mail-line) .cat-grid-label .cnt{margin-left:auto}',
+    // The page appends its own .qa-group (calendar/reminder/note/flag +
+    // status) as a separate block. On a one-line row it has to sit inline
+    // with everything else, or "all buttons in one row" is two.
+    '.mail-line .qa-group{display:inline-flex;margin:0;padding:0;border-top:none;',
+    'flex:0 0 auto;align-items:center}',
+    '.mail-line .qa-group select{padding:2px 4px;font-size:11px;max-width:118px}',
+    '.mail-line .qa-btn{width:22px;height:22px}',
+    '.mail-line input[type="checkbox"]{margin:0;flex:0 0 auto}',
+    // Wide screens get a true single line; narrow ones may wrap, which is
+    // the right trade rather than a horizontal scrollbar.
+    '@media (min-width:1000px){.cat-grid-items .cat-row.mail-line{display:flex;',
+    'align-items:center;gap:8px;flex-wrap:nowrap}',
+    '.mail-line .mail-line__main{flex-wrap:nowrap;flex:1 1 auto;min-width:0}',
+    '.mail-line .cat-links,.mail-line .qa-group{flex:0 0 auto}}',
+    '@media (max-width:900px){.mail-line__when,.mail-line__from{flex:0 0 auto}}',
+
     '.mon-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
     '.mon-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}',
     '.cat-tile{display:flex;flex-direction:column;align-items:center;gap:2px;',
@@ -587,6 +627,11 @@
     '.key-row__t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.key-row__d{flex:0 0 auto;color:var(--muted);font-size:10.5px}',
     '.key-more{color:var(--muted);font-size:11px;margin-top:5px}',
+    '.cal-sel{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));',
+    'gap:10px;margin:0 0 20px}',
+    '.cal-pick{font:inherit;text-align:left;cursor:pointer;transition:transform .08s ease}',
+    '.cal-pick:hover{transform:translateY(-1px)}',
+    '.cal-pick.is-on{border-color:var(--accent);background:var(--surface-2)}',
 
     // Drive time is the one number on a logistics row you actually act on.
     '.logi-drive{display:flex;align-items:baseline;gap:5px;flex-shrink:0;',
@@ -871,8 +916,15 @@
    * tab, and the same messages listed in two places meant two sets of
    * checkboxes writing to one punch-list entry.
    */
-  /** One live message as a row the page's injectCheckables() will adopt. */
-  function mailRowHtml(m, mock, fresh) {
+  /**
+   * One live message as a row the page's injectCheckables() will adopt.
+   *
+   * `wide` lays it out as a single full-width line — received time first,
+   * then subject, then every action on the same row. A card grid wastes the
+   * width on short subjects and pushes the count you scan for (when it
+   * arrived) to the middle of a wrapped paragraph.
+   */
+  function mailRowHtml(m, mock, fresh, wide) {
     var sev = mailSeverity(m.score)
     var meta = [
       esc(m.from),
@@ -887,14 +939,18 @@
     // The API id is right here, so offer the reliable way to attach a message
     // to an item — the id in Gmail's own address bar is a different encoding
     // the API cannot resolve.
+    var compact = !!wide
     var link = '<div class="cat-links"><a class="mail-link" href="' + esc(mailHref(m)) +
-      '" target="_blank" rel="noopener">✉️ Open in Gmail ↗</a>' +
+      '" target="_blank" rel="noopener" title="Open in Gmail">' +
+      (compact ? '✉️' : '✉️ Open in Gmail ↗') + '</a>' +
       (m.id ? '<button type="button" class="live-attach" data-mid="' + esc(m.id) +
-        '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌 Add to punch list</button>' +
+        '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">' +
+        (compact ? '📌' : '📌 Add to punch list') + '</button>' +
         '<button type="button" class="live-attach live-draft" data-mid="' + esc(m.id) +
         '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
         '" data-snippet="' + esc((m.reasons || []).join(', ')) +
-        '" title="Draft a reply to this message">✍️ Draft reply</button>' : '') +
+        '" title="Draft a reply to this message">' +
+        (compact ? '✍️' : '✍️ Draft reply') + '</button>' : '') +
       '</div>'
 
     // No data-cat: the page's own inferCategory() reads the title and always
@@ -902,14 +958,36 @@
     // category the punch list refuses to render. And no severity pill inside
     // .cat-title — the punch list takes an entry's title from that element's
     // text, and the pill's label would be glued onto it.
-    return '<div class="cat-row sev-' + sev + '" data-sync="' + esc(syncKey('mail', m.id)) + '">' +
-      '<div class="cat-main">' +
-      '<div class="cat-title">' + esc(m.subject) + '</div>' +
-      '<div class="cat-meta">' + sevPill(sev) + ' ' +
-      ((fresh || []).indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
-      (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
-      link +
-      '</div></div>'
+    if (!wide) {
+      return '<div class="cat-row sev-' + sev + '" data-sync="' + esc(syncKey('mail', m.id)) + '">' +
+        '<div class="cat-main">' +
+        '<div class="cat-title">' + esc(m.subject) + '</div>' +
+        '<div class="cat-meta">' + sevPill(sev) + ' ' +
+        ((fresh || []).indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
+        (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
+        link +
+        '</div></div>'
+    }
+
+    var when = new Date(m.date)
+    var received = isNaN(when.getTime())
+      ? ''
+      : when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
+        when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+
+    // Two zones: a flexible left that truncates, and a fixed-width action
+    // zone. With the links inside the left zone they competed with the
+    // subject for space, and the subject — the only part you read — lost.
+    return '<div class="cat-row mail-line sev-' + sev + '" data-sync="' +
+      esc(syncKey('mail', m.id)) + '">' +
+      '<div class="cat-main mail-line__main">' +
+      '<span class="mail-line__when mono">' + esc(received) + '</span>' +
+      '<span class="mail-line__from">' + esc(m.from) + '</span>' +
+      '<span class="cat-title mail-line__subj">' + esc(m.subject) + '</span>' +
+      '<span class="mail-line__tags">' + sevPill(sev) +
+      ((fresh || []).indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span>' : '') +
+      (mock ? '<span class="live-tag">sample</span>' : '') + '</span>' +
+      '</div>' + link + '</div>'
   }
 
   /**
@@ -1248,6 +1326,7 @@
         renderStats(lastData.events, lastData.mail)
         renderMonitor(bridge)
         renderTopActions(bridge)
+        refreshTabCounts()
       }, 60)
     }).observe(root, { childList: true, subtree: true })
   }
@@ -1635,6 +1714,50 @@
     })
   }
 
+
+  /**
+   * Tab counts have to mean something specific or they are just decoration.
+   *  - Punch List: how many are open AND in your court. Not the whole list —
+   *    the number you want on a tab is "how many need me", and items parked
+   *    with someone else are precisely the ones that do not.
+   *  - Actions & Inbox: the rows actually visible on it, so closing an item
+   *    moves the count. It was counting every item the page had ever seen.
+   *  - 24/7: what has arrived since your last visit, else today's.
+   */
+  function refreshTabCounts() {
+    try {
+      var mine = 0
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done) return
+        if (statusOf(id) === 'court') mine++
+      })
+      var punchCount = document.getElementById('punch-tab-count')
+      if (punchCount) punchCount.textContent = mine
+      var btn = document.querySelector('.tab-btn[data-panel="punchlist"]')
+      if (btn) btn.title = mine + ' open and in your court'
+    } catch (e) {}
+
+    var actions = document.getElementById('inbox-tab-count')
+    if (actions) {
+      var visible = 0
+      Array.prototype.forEach.call(
+        document.querySelectorAll('#panel-actions .cat-row, #panel-actions .card'),
+        function (row) {
+          if (row.classList.contains('is-closed')) return
+          if (row.style.display === 'none') return
+          // A hidden ANCESTOR SECTION still means hidden, but the panel
+          // itself is display:none whenever another tab is open — so check
+          // sections, never the panel.
+          var sec = row.closest('section')
+          if (sec && sec.style.display === 'none') return
+          visible++
+        },
+      )
+      actions.textContent = visible
+    }
+  }
+
   // ---- close an item where it appears -------------------------------------
 
   /**
@@ -1682,6 +1805,7 @@
       renderMonitor(bridge)
       renderStats(lastData.events, lastData.mail)
       renderTopActions(bridge)
+      refreshTabCounts()
     } catch (err) {}
   }
 
@@ -1803,7 +1927,7 @@
         '<span class="cnt">' + list.length + (list.length === 1 ? ' email' : ' emails') + '</span>' +
         '</div>' +
         '<div class="cat-grid-items">' +
-        list.map(function (m) { return mailRowHtml(m, mock, fresh) }).join('') +
+        list.map(function (m) { return mailRowHtml(m, mock, fresh, true) }).join('') +
         '</div></div>'
     }).join('')
   }
@@ -1826,6 +1950,11 @@
     var day = (items || []).filter(function (m) {
       return new Date(m.date).getTime() >= now - 86400000
     })
+    // Newest first: on an arrivals list, recency is the ordering that matters
+    // more than the priority score.
+    var byNewest = function (a, b) { return b.date.localeCompare(a.date) }
+    since.sort(byNewest)
+    day.sort(byNewest)
 
     var sinceLabel = previousVisit
       ? new Date(previousVisit).toLocaleDateString('en-US', {
@@ -2073,9 +2202,30 @@
       else panel.appendChild(host)
     }
 
+    // The selector counts the whole horizon; everything below it respects the
+    // current pick, so the tiles keep showing what you would get by choosing
+    // them rather than collapsing to the filtered set.
+    var picked = calCatFilter
+      ? future.filter(function (ev) { return eventCategory(ev) === calCatFilter })
+      : future
+
     host.innerHTML =
-      keyDatesHtml(events) + hoursDashboardHtml(future) + weekAheadHtml(future)
+      calSelectorHtml(future) +
+      keyDatesHtml(events) +
+      hoursDashboardHtml(picked) +
+      weekAheadHtml(picked)
     trimLogistics()
+
+    if (!host.dataset.picker) {
+      host.dataset.picker = '1'
+      host.addEventListener('click', function (e) {
+        var pick = e.target.closest('.cal-pick')
+        if (!pick) return
+        var next = pick.dataset.calCat
+        calCatFilter = next === calCatFilter ? '' : next
+        renderCalendar(lastData.events)
+      })
+    }
   }
 
   /**
@@ -2311,6 +2461,40 @@
    */
   var KEY_DATES_DAYS = 60
 
+  /** Category filter for the calendar, in the same tile idiom as the glance. */
+  var calCatFilter = ''
+
+  function calSelectorHtml(events) {
+    var counts = {}
+    var hours = {}
+    ;(events || []).forEach(function (ev) {
+      var c = eventCategory(ev)
+      counts[c] = (counts[c] || 0) + 1
+      hours[c] = (hours[c] || 0) + hoursOf(ev)
+    })
+    var keys = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] })
+    if (!keys.length) return ''
+
+    var total = (events || []).length
+    var totalH = keys.reduce(function (n, k) { return n + hours[k] }, 0)
+
+    return '<div class="cal-sel">' +
+      '<button type="button" class="glance__cell cal-pick' +
+      (calCatFilter === '' ? ' is-on' : '') + '" data-cal-cat="">' +
+      '<div class="glance__cat">🗂️ All calendars</div>' +
+      '<div class="glance__nums"><span><b>' + total + '</b> events</span>' +
+      '<span><b>' + esc(fmtHours(totalH)) + '</b></span></div></button>' +
+      keys.map(function (c) {
+        var meta = CATEGORY_META[c] || { icon: '📧', label: c }
+        return '<button type="button" class="glance__cell glance--' + esc(c) + ' cal-pick' +
+          (calCatFilter === c ? ' is-on' : '') + '" data-cal-cat="' + esc(c) + '">' +
+          '<div class="glance__cat">' + meta.icon + ' ' + esc(meta.label) + '</div>' +
+          '<div class="glance__nums"><span><b>' + counts[c] + '</b> events</span>' +
+          '<span><b>' + esc(fmtHours(hours[c])) + '</b></span></div></button>'
+      }).join('') +
+      '</div>'
+  }
+
   function keyDatesHtml(events) {
     var now = Date.now()
     var horizon = now + KEY_DATES_DAYS * 86400000
@@ -2524,6 +2708,7 @@
       renderMonitor(bridge)
       renderStats(lastData.events, lastData.mail)
       renderTopActions(bridge)
+      refreshTabCounts()
     } catch (err) {}
   }
 
@@ -2896,6 +3081,7 @@
         renderCalendar(eventItems)
         renderMonitor(bridge)
         renderStats(eventItems, mailItems)
+        refreshTabCounts()
 
         // Only a sync that actually reached both services should redefine the
         // baseline; recording a failed one would swallow the diff.
