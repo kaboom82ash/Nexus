@@ -37,12 +37,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The Google OAuth client id lives in .env.production (it is a public
+      # browser credential, guarded by its Authorized JavaScript origins).
+      # Do NOT pass VITE_GOOGLE_CLIENT_ID from a secret here: an unset secret
+      # renders as an empty string, and an existing env var outranks the
+      # .env file in Vite — which silently drops the deployed site back to
+      # sample-data mode.
       - name: Build
         run: npm run build
-        env:
-          # Optional: set a repository secret named GOOGLE_CLIENT_ID to enable
-          # live Gmail data on the deployed site. Left empty -> sample-data mode.
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
 
       - name: Setup Pages
         # Requires Pages to be enabled once in repo Settings -> Pages with

@@ -34,6 +34,15 @@ with every widget — connect in the briefing and the Gmail tiles are connected
 too. Without a Client ID configured everything runs on sample data, and opened
 as a standalone file the page says so and behaves exactly as it always did.
 
+The deployed build gets its Client ID from **`.env.production`**, committed to
+the repo. A browser OAuth client id is not a secret — Google publishes it in
+page source by design, and the control that matters is the client's *Authorized
+JavaScript origins* allowlist. Note that `.github/workflows/deploy.yml`
+deliberately does **not** pass `VITE_GOOGLE_CLIENT_ID` from a CI secret: an
+unset secret renders as an empty string, an existing env var outranks the
+`.env` file in Vite, and the deployed site would silently fall back to sample
+data.
+
 ## Tile dashboards
 
 Every other tab is a page holding a **5 × 5 grid of 25 tiles**; add more tabs
