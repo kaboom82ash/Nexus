@@ -18,9 +18,11 @@
 
 import {
   GMAIL_READONLY_SCOPE,
+  fetchThread,
   fetchTopEmails,
   isMockMode,
   isScopeAuthorized,
+  parseGmailId,
   requestScopes,
 } from './gmail'
 import { CALENDAR_SCOPE, fetchUpcomingEvents } from './calendar'
@@ -42,6 +44,26 @@ export interface BridgeMailItem {
   reasons: string[]
   url: string
   category: string
+}
+
+export interface BridgeThreadMessage {
+  id: string
+  from: string
+  to: string
+  date: string
+  snippet: string
+  unread: boolean
+  outbound: boolean
+  url: string
+}
+
+export interface BridgeThread {
+  threadId: string
+  subject: string
+  participants: string[]
+  messages: BridgeThreadMessage[]
+  mock: boolean
+  error?: string
 }
 
 export interface BridgeEventItem {
@@ -80,11 +102,17 @@ export interface BriefingBridge {
   fetchMail(opts: {
     lookbackHours?: number
     limit?: number
+    /** Scoring pool size; a long lookback needs a wider one. */
+    candidates?: number
   }): Promise<BridgeResult<BridgeMailItem>>
   fetchEvents(opts: {
     days?: number
     limit?: number
   }): Promise<BridgeResult<BridgeEventItem>>
+  /** The conversation behind a punch-list item, oldest message first. */
+  fetchThread(id: string): Promise<BridgeThread>
+  /** Normalize a pasted Gmail id or URL; '' when it is neither. */
+  parseId(input: string): string
 }
 
 function status(): BridgeStatus {
@@ -121,9 +149,44 @@ const bridge: BriefingBridge = {
     }
   },
 
-  async fetchMail({ lookbackHours = 72, limit = 12 }) {
+  parseId(input: string) {
+    return parseGmailId(input)
+  },
+
+  async fetchThread(id: string) {
+    const empty = {
+      threadId: '',
+      subject: '',
+      participants: [] as string[],
+      messages: [] as BridgeThreadMessage[],
+      mock: false,
+    }
     try {
-      const res = await fetchTopEmails({ lookbackHours, limit })
+      const t = await fetchThread(id)
+      return {
+        threadId: t.threadId,
+        subject: t.subject,
+        participants: t.participants,
+        mock: t.mock,
+        messages: t.messages.map((m) => ({
+          id: m.id,
+          from: m.fromName || m.fromEmail,
+          to: m.to,
+          date: m.date,
+          snippet: m.snippet,
+          unread: m.unread,
+          outbound: m.outbound,
+          url: m.url,
+        })),
+      }
+    } catch (err) {
+      return { ...empty, error: message(err, 'Could not load that thread') }
+    }
+  },
+
+  async fetchMail({ lookbackHours = 72, limit = 12, candidates }) {
+    try {
+      const res = await fetchTopEmails({ lookbackHours, limit, candidates })
       return {
         mock: res.mock,
         items: res.emails.map((e) => ({

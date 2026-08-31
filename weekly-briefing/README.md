@@ -113,11 +113,13 @@ page's head (they sit right after the closing `</style>`). Forgetting costs a
 flash of the original theme, not the integration: `WeeklyBriefing.tsx` injects
 them if they are missing.
 
-Day to day you do not need a rebuild at all — **↻ Sync now** in the Live data
-strip pulls fresh mail and events into the page directly. The 🔄 Refresh button
-still copies the standing prompt, which is the different and larger job:
-regenerating the whole curated briefing — categorized bands, drafts, logistics,
-the vault — which is the LLM's work, not an API call.
+Day to day you do not need a rebuild at all — the page syncs itself every 5
+minutes, and **↻ Sync now** forces it. The masthead's old 🔄 Refresh button
+(which copied a rebuild prompt) is removed by the bridge: the page fetches its
+own data now, so it was a button that no longer did what its label promised.
+Run the master prompt when you want the *curated* layer regenerated —
+categorized bands, drafts, logistics, the vault — which is the LLM's work, not
+an API call.
 
 ## Where to take it next
 

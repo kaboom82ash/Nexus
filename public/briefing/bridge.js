@@ -21,8 +21,22 @@
 (function () {
   'use strict'
 
-  var MAIL_LOOKBACK_HOURS = 72
-  var MAIL_LIMIT = 12
+  // Lookback options for the actions list. `candidates` is the scoring pool:
+  // a 90-day window ranked from the 40 newest messages would only ever surface
+  // the newest slice, so the pool widens with the range (each candidate is one
+  // metadata request, which is why it is not simply "all of them").
+  var RANGES = [
+    { key: '24h', label: '24 hours', hours: 24, limit: 12, candidates: 40 },
+    { key: '7d', label: '7 days', hours: 24 * 7, limit: 20, candidates: 80 },
+    { key: '30d', label: '30 days', hours: 24 * 30, limit: 30, candidates: 120 },
+    { key: '90d', label: '90 days', hours: 24 * 90, limit: 40, candidates: 150 },
+    { key: 'custom', label: 'Custom…', hours: 0, limit: 30, candidates: 120 },
+  ]
+  var DEFAULT_RANGE = '7d'
+  var RANGE_KEY = 'ak-briefing-range'
+  var CUSTOM_DAYS_KEY = 'ak-briefing-range-days'
+  var MAX_CUSTOM_DAYS = 365
+
   var EVENT_DAYS = 14
   var EVENT_LIMIT = 25
 
@@ -31,6 +45,9 @@
   // minutes helps nobody — and catches up when it comes back.
   var AUTO_SYNC_MS = 5 * 60 * 1000
   var STALE_MS = 2 * 60 * 1000
+
+  /** Own punch-list items and thread pins, kept beside the page's own state. */
+  var OWN_KEY = 'ak-briefing-own'
 
   // Each Google service gets its own icon and its own connection state,
   // because a partial grant is a real outcome: the consent screen lets you
@@ -138,9 +155,114 @@
     return '<span class="pill sev-' + sev + ' sev-tag">' + label + '</span>'
   }
 
+
+  // ---- lookback range -----------------------------------------------------
+
+  function readStored(key, fallback) {
+    try {
+      return localStorage.getItem(key) || fallback
+    } catch (e) {
+      return fallback
+    }
+  }
+
+  function writeStored(key, value) {
+    try {
+      localStorage.setItem(key, value)
+    } catch (e) {
+      /* private mode — the choice just does not survive a reload */
+    }
+  }
+
+  function currentRange() {
+    var key = readStored(RANGE_KEY, DEFAULT_RANGE)
+    var found = null
+    RANGES.forEach(function (r) {
+      if (r.key === key) found = r
+    })
+    if (!found) return RANGES[1]
+    if (found.key !== 'custom') return found
+
+    var days = parseInt(readStored(CUSTOM_DAYS_KEY, '14'), 10)
+    if (!(days > 0)) days = 14
+    days = Math.min(days, MAX_CUSTOM_DAYS)
+    return {
+      key: 'custom',
+      label: days + (days === 1 ? ' day' : ' days'),
+      hours: days * 24,
+      // Scale the pool with the window, on the same curve as the presets.
+      limit: Math.min(40, Math.max(12, Math.round(days * 1.2))),
+      candidates: Math.min(150, Math.max(40, days * 4)),
+    }
+  }
+
+  // ---- own punch-list items ----------------------------------------------
+
+  /**
+   * Items the user adds by hand, and the threads they pin, live in their own
+   * storage key rather than inside the page's state blob. The page rewrites
+   * that blob wholesale on every rebuild-and-restore path, and anything it
+   * does not know about is at risk there; keeping our records separate means
+   * a weekly rebuild cannot drop them.
+   */
+  function loadOwn() {
+    try {
+      var raw = localStorage.getItem(OWN_KEY)
+      var parsed = raw ? JSON.parse(raw) : null
+      if (parsed && typeof parsed === 'object') {
+        return { items: parsed.items || {}, threads: parsed.threads || {} }
+      }
+    } catch (e) {}
+    return { items: {}, threads: {} }
+  }
+
+  var own = loadOwn()
+
+  function saveOwn() {
+    try {
+      localStorage.setItem(OWN_KEY, JSON.stringify(own))
+    } catch (e) {}
+  }
+
+  /** Push our records into the page's punch list and re-render it. */
+  function applyOwnItems() {
+    if (typeof STATE !== 'object' || !STATE || !STATE.punchlist) return
+    Object.keys(own.items).forEach(function (id) {
+      var rec = own.items[id]
+      var existing = STATE.punchlist[id]
+      if (existing) {
+        // The page owns done/doneAt/subs once the entry exists — only refresh
+        // the fields we are the source of truth for.
+        existing.title = rec.title
+        existing.category = rec.category
+        existing.severity = rec.severity
+        existing.links = rec.links
+        return
+      }
+      STATE.punchlist[id] = {
+        title: rec.title,
+        category: rec.category,
+        severity: rec.severity,
+        links: rec.links,
+        done: false,
+        doneAt: null,
+        addedAt: rec.addedAt,
+        subs: [],
+      }
+    })
+    persistPage()
+    if (typeof renderPunchList === 'function') renderPunchList()
+  }
+
+  function persistPage() {
+    try {
+      if (typeof schedulePersist === 'function') schedulePersist()
+    } catch (e) {}
+  }
+
   // ---- the live strip -----------------------------------------------------
 
-  var strip, statusEl, syncBtn
+  var strip, statusEl, syncBtn, rangeSel, customDays
   var chips = {}
   var busy = false
   var autoTimer = null
@@ -183,10 +305,67 @@
     '.live-chip--err .live-chip__icon{filter:none;opacity:1}',
     '.live-chip[disabled]{cursor:default}',
     '.live-auto{color:var(--muted);font-size:11px}',
+    '.live-sep{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}',
+    '.live-select,.live-days{font:inherit;font-size:12px;padding:4px 6px;border-radius:8px;',
+    'border:1px solid var(--line);background:var(--surface-2);color:var(--ink)}',
+    '.live-days{width:64px}',
     '.live-section{margin-bottom:24px}',
     '.live-band{border-left-color:var(--accent)}',
     '.live-tag{font-size:10px;font-weight:700;text-transform:uppercase;margin-left:6px;',
     'padding:1px 5px;border-radius:4px;background:var(--high-bg);color:var(--high)}',
+
+    '.own-form{margin:0 0 18px;padding:14px;border:1px solid var(--line);',
+    'border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}',
+    '.own-form__row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}',
+    '.own-form__row+.own-form__row{margin-top:8px}',
+    '.own-in{font:inherit;font-size:13px;padding:7px 9px;border-radius:8px;',
+    'border:1px solid var(--line);background:var(--surface-2);color:var(--ink)}',
+    '.own-in--title{flex:1 1 320px}',
+    '.own-in--email{flex:1 1 380px}',
+    '.own-in--sel{flex:0 0 auto}',
+    '.own-form__hint{color:var(--muted);font-size:11.5px}',
+    '.own-form__msg{margin-top:8px;font-size:12px;color:var(--low)}',
+    '.own-form__msg--bad{color:var(--critical)}',
+    '.live-attach{font:inherit;font-size:11px;padding:1px 7px;border-radius:6px;',
+    'border:1px solid var(--line);background:transparent;color:var(--accent);cursor:pointer}',
+    '.live-attach:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}',
+
+    '.mon-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
+    '.mon-q{flex:1 1 240px}',
+    '.mon-count{color:var(--muted);font-size:12px;margin-bottom:10px;',
+    'font-family:"IBM Plex Mono",monospace}',
+    '.mon-row{border:1px solid var(--line);border-left:4px solid var(--line);',
+    'border-radius:10px;background:var(--surface);padding:12px 14px;margin-bottom:10px}',
+    '.mon-row.sev-critical{border-left-color:var(--critical)}',
+    '.mon-row.sev-high{border-left-color:var(--high)}',
+    '.mon-row.sev-medium{border-left-color:var(--medium)}',
+    '.mon-row.sev-low{border-left-color:var(--low)}',
+    '.mon-row__head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
+    '.mon-row__title{font-weight:600}',
+    '.mon-row__meta{color:var(--muted);font-size:12px;margin-top:3px}',
+    '.mon-chip{font-size:11px;padding:1px 7px;border-radius:999px;',
+    'border:1px solid var(--line);color:var(--muted)}',
+    '.mon-chip--done{color:var(--low);border-color:var(--low)}',
+    '.mon-chip--wait{color:var(--high);border-color:var(--high)}',
+    '.mon-err{color:var(--critical)}',
+    '.mon-thread{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}',
+    '.mon-thread-toggle{cursor:pointer;font-size:12px;color:var(--accent);',
+    'font-weight:600;list-style:none}',
+    '.mon-thread-toggle::-webkit-details-marker{display:none}',
+    '.mon-thread-toggle::before{content:"▸ ";}',
+    '.mon-thread[open] .mon-thread-toggle::before{content:"▾ ";}',
+    '.mon-thread__head{margin:8px 0;font-size:12.5px;display:flex;gap:8px;',
+    'align-items:center;flex-wrap:wrap}',
+    '.mon-timeline{list-style:none;margin:0;padding:0 0 0 14px;',
+    'border-left:2px solid var(--line)}',
+    '.mon-msg{position:relative;padding:0 0 12px 12px}',
+    '.mon-msg::before{content:"";position:absolute;left:-19px;top:4px;width:8px;',
+    'height:8px;border-radius:50%;background:var(--muted)}',
+    '.mon-msg--out::before{background:var(--accent)}',
+    '.mon-msg__who{font-weight:600;font-size:12.5px}',
+    '.mon-msg__when{color:var(--muted);font-weight:400;margin-left:8px;',
+    'font-family:"IBM Plex Mono",monospace;font-size:11px}',
+    '.mon-msg__snippet{color:var(--muted);font-size:12px;margin:2px 0 3px}',
   ].join('')
 
   function injectStyles() {
@@ -211,6 +390,32 @@
     syncBtn.type = 'button'
     syncBtn.title = 'Pull the latest mail and calendar events in now'
 
+    // The masthead's "Refresh data" button copied a prompt to paste into
+    // Claude for a full rebuild. The page pulls its own data now, so it is
+    // one button that does not do what its label promises.
+    var oldRefresh = document.getElementById('refresh-btn')
+    if (oldRefresh && oldRefresh.parentNode) {
+      oldRefresh.parentNode.removeChild(oldRefresh)
+    }
+
+    rangeSel = el('select', 'live-select')
+    rangeSel.title = 'How far back the actions list looks'
+    RANGES.forEach(function (r) {
+      var opt = document.createElement('option')
+      opt.value = r.key
+      opt.textContent = r.key === 'custom' ? r.label : 'Last ' + r.label
+      rangeSel.appendChild(opt)
+    })
+    rangeSel.value = readStored(RANGE_KEY, DEFAULT_RANGE)
+
+    customDays = el('input', 'live-days')
+    customDays.type = 'number'
+    customDays.min = '1'
+    customDays.max = String(MAX_CUSTOM_DAYS)
+    customDays.value = readStored(CUSTOM_DAYS_KEY, '14')
+    customDays.title = 'Custom window, in days'
+    customDays.setAttribute('aria-label', 'Custom window in days')
+
     strip.appendChild(el('span', 'live-label', 'Live data'))
     SERVICES.forEach(function (svc) {
       var chip = el('button', 'live-chip')
@@ -223,6 +428,9 @@
       strip.appendChild(chip)
     })
     strip.appendChild(statusEl)
+    strip.appendChild(el('span', 'live-sep', 'Actions from'))
+    strip.appendChild(rangeSel)
+    strip.appendChild(customDays)
     strip.appendChild(syncBtn)
 
     masthead.insertBefore(strip, tabs)
@@ -242,6 +450,11 @@
     if (!masthead) return
     document.documentElement.style.scrollPaddingTop =
       masthead.offsetHeight + 12 + 'px'
+  }
+
+  function updateRangeUi() {
+    if (!customDays || !rangeSel) return
+    customDays.hidden = rangeSel.value !== 'custom'
   }
 
   function setStatus(text, tone) {
@@ -345,12 +558,22 @@
     if (c) c.textContent = n + (n === 1 ? ' item' : ' items')
   }
 
+  function refreshMailSubhead() {
+    var sub = document.querySelector('#live-inbox .section-head .sub')
+    if (sub) {
+      sub.textContent =
+        'Top messages from the last ' + currentRange().label +
+        ', ranked by the dashboard’s priority score · check one to queue it'
+    }
+  }
+
   function renderMail(items, mock) {
     var host = ensureSection({
       panelId: 'panel-actions',
       id: 'live-inbox',
       heading: 'Live inbox',
-      sub: 'Top messages from the last ' + MAIL_LOOKBACK_HOURS + ' hours, ranked by the dashboard’s priority score · check one to queue it',
+      sub: 'Top messages from the last ' + currentRange().label +
+        ', ranked by the dashboard’s priority score · check one to queue it',
       icon: '✉️',
       label: 'Live inbox',
       href: 'https://mail.google.com/mail/u/0/#inbox',
@@ -358,7 +581,7 @@
     })
     if (!host) return
     if (!items.length) {
-      host.innerHTML = '<div class="cat-row no-check"><div class="cat-main"><div class="cat-meta">Nothing in the last ' + MAIL_LOOKBACK_HOURS + ' hours.</div></div></div>'
+      host.innerHTML = '<div class="cat-row no-check"><div class="cat-main"><div class="cat-meta">Nothing in the last ' + currentRange().label + '.</div></div></div>'
       return
     }
     var html = ''
@@ -373,8 +596,14 @@
         m.category && m.category !== 'other' ? esc(m.category) : '',
         esc((m.reasons || []).slice(0, 3).join(' · ')),
       ].filter(Boolean).join(' · ')
+      // The API id is right here, so offer the reliable way to attach a
+      // message to an item — the id in Gmail's own address bar is a different
+      // encoding the API cannot resolve.
       var link = '<div class="cat-links"><a class="mail-link" href="' + esc(mailHref(m)) +
-        '" target="_blank" rel="noopener">✉️ Open in Gmail ↗</a></div>'
+        '" target="_blank" rel="noopener">✉️ Open in Gmail ↗</a>' +
+        (m.id ? '<button type="button" class="live-attach" data-mid="' + esc(m.id) +
+          '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌 Add to punch list</button>' : '') +
+        '</div>'
       // No data-cat: the page's own inferCategory() reads the title and always
       // returns one of its known keys, so a live item can never land in a
       // category the punch list refuses to render. And no severity pill inside
@@ -390,6 +619,7 @@
         '</div></div>'
     })
     host.innerHTML = html
+    refreshMailSubhead()
     setCount('live-inbox', items.length)
   }
 
@@ -476,6 +706,399 @@
     })
   }
 
+
+  // ---- own punch-list items: the add form --------------------------------
+
+  var CATEGORY_OPTS = [
+    ['personal', 'Personal & career'],
+    ['kids', 'Kids'],
+    ['home', 'Home'],
+    ['finance', 'Finance'],
+    ['health', 'Health'],
+    ['lifestyle', 'Lifestyle'],
+  ]
+  var SEVERITY_OPTS = [
+    ['critical', 'Critical'],
+    ['high', 'High'],
+    ['medium', 'Medium'],
+    ['low', 'Low'],
+  ]
+
+  function optionsHtml(pairs, selected) {
+    return pairs
+      .map(function (p) {
+        return '<option value="' + p[0] + '"' +
+          (p[0] === selected ? ' selected' : '') + '>' + esc(p[1]) + '</option>'
+      })
+      .join('')
+  }
+
+  /**
+   * A form at the top of the punch list for items that never came from a
+   * sweep. The category select is not decoration: renderPunchList only draws
+   * entries whose category is one it knows, so a free-text category would file
+   * an item into a group that never renders.
+   */
+  function buildOwnForm(bridge) {
+    var root = document.getElementById('punchlist-root')
+    if (!root || document.getElementById('own-form')) return
+
+    var form = el('form', 'own-form')
+    form.id = 'own-form'
+    form.innerHTML =
+      '<div class="own-form__row">' +
+      '<input class="own-in own-in--title" name="title" placeholder="Add your own item — what needs doing?" required>' +
+      '<select class="own-in own-in--sel" name="category">' + optionsHtml(CATEGORY_OPTS, 'personal') + '</select>' +
+      '<select class="own-in own-in--sel" name="severity">' + optionsHtml(SEVERITY_OPTS, 'medium') + '</select>' +
+      '<button type="submit" class="live-btn live-btn--primary">Add</button>' +
+      '</div>' +
+      '<div class="own-form__row">' +
+      '<input class="own-in own-in--email" name="email" placeholder="Attach an email — paste a Gmail link or message id (optional)">' +
+      '<span class="own-form__hint">Attached mail gets a thread timeline and history on this item.</span>' +
+      '</div>' +
+      '<div class="own-form__msg" hidden></div>'
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault()
+      addOwnItem(form, bridge)
+    })
+    root.parentNode.insertBefore(form, root)
+  }
+
+  /** Send a live message into the add-item form, and go where the form is. */
+  function prefillOwnForm(title, messageId) {
+    var form = document.getElementById('own-form')
+    if (!form) return
+    if (typeof switchTab === 'function') switchTab('punchlist')
+    form.title.value = title
+    form.email.value = messageId
+    formMessage(form, 'Email attached — set a category and severity, then Add.', false)
+    form.title.focus()
+    form.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+
+  function formMessage(form, text, bad) {
+    var msg = form.querySelector('.own-form__msg')
+    if (!msg) return
+    msg.textContent = text || ''
+    msg.hidden = !text
+    msg.className = 'own-form__msg' + (bad ? ' own-form__msg--bad' : '')
+  }
+
+  function addOwnItem(form, bridge) {
+    var title = form.title.value.trim()
+    if (!title) return
+    var rawEmail = form.email.value.trim()
+    var emailId = rawEmail ? bridge.parseId(rawEmail) : ''
+    if (rawEmail && !emailId) {
+      formMessage(form, 'That does not look like a Gmail link or message id.', true)
+      return
+    }
+
+    var id = uniqueOwnId(title)
+    var links = []
+    if (emailId) {
+      links.push({
+        label: '✉️ Email ↗',
+        href: 'https://mail.google.com/mail/u/0/#all/' + emailId,
+      })
+    }
+    own.items[id] = {
+      title: title,
+      category: form.category.value,
+      severity: form.severity.value,
+      links: links,
+      emailId: emailId,
+      addedAt: new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }),
+    }
+    saveOwn()
+    applyOwnItems()
+
+    form.reset()
+    formMessage(
+      form,
+      emailId
+        ? 'Added — the thread is on the Monitor tab.'
+        : 'Added to your punch list.',
+      false,
+    )
+    if (emailId) renderMonitor(bridge)
+  }
+
+  /** Own ids are namespaced so they can never collide with a swept item's. */
+  function uniqueOwnId(title) {
+    var base = 'own-' + String(title)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
+      .slice(0, 50)
+    var id = base || 'own-item'
+    var n = 2
+    while (own.items[id]) {
+      id = base + '-' + n
+      n++
+    }
+    return id
+  }
+
+
+  // ---- Monitor tab: filters, thread timelines, history --------------------
+
+  var STATUS_FILTERS = [
+    ['', 'Any status'],
+    ['waiting', '⏳ Waiting on reply'],
+    ['court', '➡️ In their court'],
+    ['fwd', '📤 Forwarded'],
+    ['remind', '⏰ Reminder set'],
+    ['none', '— no status set'],
+  ]
+  var DONE_FILTERS = [
+    ['open', 'Open only'],
+    ['done', 'Completed only'],
+    ['all', 'Open + completed'],
+  ]
+
+  var monitorPanel = null
+  var threadCache = {}
+
+  /**
+   * Register a sixth tab on the page's own tab machinery. The page wires its
+   * tab buttons from a NodeList captured at load, so a button added later gets
+   * no handler — hence the explicit listener onto its global switchTab.
+   */
+  function buildMonitorTab(bridge) {
+    if (monitorPanel || typeof panels !== 'object' || !panels) return
+    var main = document.querySelector('main')
+    var nav = document.querySelector('.masthead .tabs')
+    if (!main || !nav) return
+
+    monitorPanel = el('div', 'panel')
+    monitorPanel.id = 'panel-monitor'
+    monitorPanel.innerHTML =
+      '<section>' +
+      '<div class="section-head"><h2>🔎 Monitor</h2>' +
+      '<span class="sub">Filter the punch list — everything you are waiting on, in one place — and follow the mail behind each item</span>' +
+      '</div>' +
+      '<div class="mon-filters">' +
+      '<input class="own-in mon-q" placeholder="Search titles…">' +
+      '<select class="own-in own-in--sel mon-status">' + optionsHtml(STATUS_FILTERS, '') + '</select>' +
+      '<select class="own-in own-in--sel mon-cat"><option value="">Any category</option>' +
+      optionsHtml(CATEGORY_OPTS, '_none_') + '</select>' +
+      '<select class="own-in own-in--sel mon-sev"><option value="">Any severity</option>' +
+      optionsHtml(SEVERITY_OPTS, '_none_') + '</select>' +
+      '<select class="own-in own-in--sel mon-done">' + optionsHtml(DONE_FILTERS, 'open') + '</select>' +
+      '<button type="button" class="live-btn mon-clear">Clear</button>' +
+      '</div>' +
+      '<div class="mon-count"></div>' +
+      '<div class="mon-results"></div>' +
+      '</section>'
+    main.appendChild(monitorPanel)
+    panels.monitor = monitorPanel
+
+    var btn = el('button', 'tab-btn')
+    btn.type = 'button'
+    btn.setAttribute('role', 'tab')
+    btn.dataset.panel = 'monitor'
+    btn.setAttribute('aria-selected', 'false')
+    btn.innerHTML = '🔎 Monitor <span class="count mono" id="monitor-tab-count">0</span>'
+    btn.addEventListener('click', function () {
+      if (typeof switchTab === 'function') switchTab('monitor')
+      renderMonitor(bridge)
+    })
+    nav.appendChild(btn)
+
+    ;['.mon-q', '.mon-status', '.mon-cat', '.mon-sev', '.mon-done'].forEach(function (sel) {
+      var node = monitorPanel.querySelector(sel)
+      node.addEventListener(sel === '.mon-q' ? 'input' : 'change', function () {
+        renderMonitor(bridge)
+      })
+    })
+    monitorPanel.querySelector('.mon-clear').addEventListener('click', function () {
+      monitorPanel.querySelector('.mon-q').value = ''
+      monitorPanel.querySelector('.mon-status').value = ''
+      monitorPanel.querySelector('.mon-cat').value = ''
+      monitorPanel.querySelector('.mon-sev').value = ''
+      monitorPanel.querySelector('.mon-done').value = 'open'
+      renderMonitor(bridge)
+    })
+
+    // One delegated handler for every expandable thread on the tab.
+    monitorPanel.addEventListener('click', function (e) {
+      var toggle = e.target.closest('.mon-thread-toggle')
+      if (toggle) loadThread(bridge, toggle.dataset.id, toggle.dataset.email)
+    })
+  }
+
+  function statusOf(id) {
+    try {
+      return (STATE.status && STATE.status[id]) || ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  function matches(id, entry, f) {
+    if (f.q && String(entry.title || '').toLowerCase().indexOf(f.q) === -1) return false
+    var st = statusOf(id)
+    if (f.status === 'none' && st) return false
+    if (f.status && f.status !== 'none' && st !== f.status) return false
+    if (f.cat && entry.category !== f.cat) return false
+    if (f.sev && entry.severity !== f.sev) return false
+    if (f.done === 'open' && entry.done) return false
+    if (f.done === 'done' && !entry.done) return false
+    return true
+  }
+
+  function statusLabel(code) {
+    var out = ''
+    STATUS_FILTERS.forEach(function (p) {
+      if (p[0] === code && code) out = p[1]
+    })
+    return out
+  }
+
+  /** The email attached to an item — either one we recorded, or a Gmail link. */
+  function emailIdFor(id, entry, bridge) {
+    if (own.items[id] && own.items[id].emailId) return own.items[id].emailId
+    var links = entry.links || []
+    for (var i = 0; i < links.length; i++) {
+      if (String(links[i].href).indexOf('mail.google.com') !== -1) {
+        var parsed = bridge.parseId(links[i].href)
+        if (parsed) return parsed
+      }
+    }
+    return ''
+  }
+
+  function renderMonitor(bridge) {
+    if (!monitorPanel) return
+    var f = {
+      q: monitorPanel.querySelector('.mon-q').value.trim().toLowerCase(),
+      status: monitorPanel.querySelector('.mon-status').value,
+      cat: monitorPanel.querySelector('.mon-cat').value,
+      sev: monitorPanel.querySelector('.mon-sev').value,
+      done: monitorPanel.querySelector('.mon-done').value,
+    }
+
+    var entries = []
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var entry = STATE.punchlist[id]
+        if (entry && matches(id, entry, f)) entries.push([id, entry])
+      })
+    } catch (e) {}
+
+    // Hardest first, then most recently added.
+    var order = { critical: 0, high: 1, medium: 2, low: 3 }
+    entries.sort(function (a, b) {
+      var d = (order[a[1].severity] ?? 9) - (order[b[1].severity] ?? 9)
+      return d !== 0 ? d : String(b[1].addedAt || '').localeCompare(String(a[1].addedAt || ''))
+    })
+
+    var countEl = monitorPanel.querySelector('.mon-count')
+    countEl.textContent =
+      entries.length + (entries.length === 1 ? ' item' : ' items') + ' match'
+    var tabCount = document.getElementById('monitor-tab-count')
+    if (tabCount) tabCount.textContent = entries.length
+
+    var results = monitorPanel.querySelector('.mon-results')
+    if (!entries.length) {
+      results.innerHTML =
+        '<p class="note">Nothing matches. Statuses are set from the ⏳ dropdown on any item — filter on one here to keep an eye on what you are waiting for.</p>'
+      return
+    }
+
+    results.innerHTML = entries
+      .map(function (pair) {
+        var id = pair[0]
+        var e = pair[1]
+        var st = statusLabel(statusOf(id))
+        var emailId = emailIdFor(id, e, bridge)
+        var linksHtml = (e.links || [])
+          .map(function (l) {
+            return '<a class="mail-link" href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'
+          })
+          .join(' ')
+        var cached = threadCache[emailId]
+        return (
+          '<div class="mon-row sev-' + esc(e.severity || 'low') + '">' +
+          '<div class="mon-row__head">' +
+          '<span class="mon-row__title">' + esc(e.title) + '</span>' +
+          sevPill(e.severity || 'low') +
+          (st ? '<span class="mon-chip">' + esc(st) + '</span>' : '') +
+          (e.done ? '<span class="mon-chip mon-chip--done">✓ done</span>' : '') +
+          (own.items[id] ? '<span class="live-tag">yours</span>' : '') +
+          '</div>' +
+          '<div class="mon-row__meta">' + esc(e.category || '') +
+          (e.addedAt ? ' · added ' + esc(e.addedAt) : '') +
+          ((e.subs || []).length ? ' · ' + e.subs.length + ' steps' : '') +
+          '</div>' +
+          (linksHtml ? '<div class="cat-links">' + linksHtml + '</div>' : '') +
+          (emailId
+            ? '<details class="mon-thread"' + (cached ? ' open' : '') + '>' +
+              '<summary class="mon-thread-toggle" data-id="' + esc(id) + '" data-email="' + esc(emailId) + '">' +
+              '🧵 Thread history</summary>' +
+              '<div class="mon-thread__body" data-for="' + esc(emailId) + '">' +
+              (cached ? threadHtml(cached) : '<span class="note">Loading…</span>') +
+              '</div></details>'
+            : '') +
+          '</div>'
+        )
+      })
+      .join('')
+  }
+
+  function loadThread(bridge, id, emailId) {
+    if (!emailId || threadCache[emailId]) return
+    bridge.fetchThread(emailId).then(function (t) {
+      threadCache[emailId] = t
+      var body = monitorPanel.querySelector('.mon-thread__body[data-for="' + emailId + '"]')
+      if (body) body.innerHTML = threadHtml(t)
+    })
+  }
+
+  /**
+   * The conversation as a timeline: who, when, and Gmail's own preview, oldest
+   * first, with inbound and outbound distinguished so the shape of the
+   * exchange — who owes whom a reply — is readable at a glance.
+   */
+  function threadHtml(t) {
+    if (t.error) return '<span class="note mon-err">' + esc(t.error) + '</span>'
+    if (!t.messages || !t.messages.length) {
+      return '<span class="note">No messages found on that thread.</span>'
+    }
+    var last = t.messages[t.messages.length - 1]
+    var head =
+      '<div class="mon-thread__head">' +
+      '<b>' + esc(t.subject) + '</b>' +
+      '<span class="note"> · ' + t.messages.length + ' messages · ' +
+      esc(t.participants.join(', ')) + '</span>' +
+      (last.outbound
+        ? '<span class="mon-chip">last word: you</span>'
+        : '<span class="mon-chip mon-chip--wait">awaiting your reply</span>') +
+      (t.mock ? '<span class="live-tag">sample</span>' : '') +
+      '</div>'
+
+    return head + '<ol class="mon-timeline">' + t.messages
+      .map(function (m) {
+        return (
+          '<li class="mon-msg' + (m.outbound ? ' mon-msg--out' : '') + '">' +
+          '<div class="mon-msg__who">' + esc(m.from) +
+          '<span class="mon-msg__when">' + esc(timeLabel(m.date, false)) + '</span></div>' +
+          '<div class="mon-msg__snippet">' + esc(m.snippet) + '</div>' +
+          (m.url
+            ? '<a class="mail-link" href="' + esc(m.url) + '" target="_blank" rel="noopener">✉️ Open ↗</a>'
+            : '') +
+          '</li>'
+        )
+      })
+      .join('') + '</ol>'
+  }
+
   // ---- sync ---------------------------------------------------------------
 
   function sync(bridge) {
@@ -484,8 +1107,13 @@
     if (syncBtn) syncBtn.disabled = true
     setStatus('Syncing…')
 
+    var range = currentRange()
     return Promise.all([
-      bridge.fetchMail({ lookbackHours: MAIL_LOOKBACK_HOURS, limit: MAIL_LIMIT }),
+      bridge.fetchMail({
+        lookbackHours: range.hours,
+        limit: range.limit,
+        candidates: range.candidates,
+      }),
       bridge.fetchEvents({ days: EVENT_DAYS, limit: EVENT_LIMIT }),
     ])
       .then(function (res) {
@@ -496,6 +1124,7 @@
         renderMail(mail.items || [], mail.mock)
         renderEvents(events.items || [], events.mock)
         rewirePage()
+        renderMonitor(bridge)
         syncScrollPadding()
         lastSyncAt = Date.now()
 
@@ -580,6 +1209,8 @@
       // clicked "Open full page" wondering where the live sections went.
       renderChipsUnavailable()
       setStatus('Open this page inside Nexus for live Gmail and Calendar data', 'idle')
+      if (rangeSel) rangeSel.disabled = true
+      if (customDays) customDays.hidden = true
       return
     }
 
@@ -607,6 +1238,34 @@
     syncBtn.addEventListener('click', function () {
       sync(bridge)
     })
+
+    rangeSel.addEventListener('change', function () {
+      writeStored(RANGE_KEY, rangeSel.value)
+      updateRangeUi()
+      sync(bridge)
+    })
+    customDays.addEventListener('change', function () {
+      var days = parseInt(customDays.value, 10)
+      if (!(days > 0)) days = 14
+      days = Math.min(days, MAX_CUSTOM_DAYS)
+      customDays.value = days
+      writeStored(CUSTOM_DAYS_KEY, String(days))
+      if (rangeSel.value === 'custom') sync(bridge)
+    })
+    updateRangeUi()
+
+    document.addEventListener('click', function (e) {
+      var att = e.target.closest('.live-attach')
+      if (!att) return
+      prefillOwnForm(att.dataset.title || '', att.dataset.mid || '')
+    })
+
+    // Own items and the Monitor tab work with or without a connection: they
+    // read the punch list, which is local.
+    buildOwnForm(bridge)
+    buildMonitorTab(bridge)
+    applyOwnItems()
+    renderMonitor(bridge)
 
     var st = bridge.status()
     renderChips(st)

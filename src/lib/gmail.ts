@@ -365,10 +365,14 @@ export async function requestScopes(
   // holds the same token string, so revoking on disconnect still covers it.
   for (const scope of unique) setScopeToken(scope, { token, expiresAt })
 
-  if (interactive && unique.includes(GMAIL_SCOPE) && typeof window !== 'undefined') {
+  if (interactive && typeof window !== 'undefined') {
     // The per-scope broadcast in acquireToken only fires for a bare
     // gmail.readonly request, so announce this one ourselves.
-    window.dispatchEvent(new Event('nexus:gmail-token'))
+    if (unique.includes(GMAIL_SCOPE)) {
+      window.dispatchEvent(new Event('nexus:gmail-token'))
+    }
+    // Fires for ANY scope, so indicators for non-Gmail services update too.
+    window.dispatchEvent(new Event('nexus:google-token'))
   }
   startKeepAlive()
   return token
@@ -644,6 +648,8 @@ export function gmailWebUrl(messageId: string): string {
 
 /** How many recent messages we score before taking the top N. */
 const SCORE_CANDIDATE_CAP = 40
+/** Ceiling on the scoring pool — one metadata request each, so this is latency. */
+const SCORE_CANDIDATE_MAX = 150
 
 const TRANSACTIONAL =
   /\b(order|ordered|receipt|payment|paid|invoice|statement|refund|shipped|delivery|delivered|confirmation|confirmed|venmo|paypal|klarna|zelle|deposit|transfer|bank|billing|charged)\b/i
@@ -826,6 +832,13 @@ export interface TopEmailsOptions {
   /** Extra Gmail search criteria ANDed with the inbox+time window. */
   search?: string
   interactive?: boolean
+  /**
+   * How many recent messages to score before taking the top `limit`. Each
+   * candidate costs one metadata request, so this trades latency for coverage:
+   * a long lookback needs a wider pool or it ranks only the newest slice of it.
+   * Defaults to SCORE_CANDIDATE_CAP; hard-capped at SCORE_CANDIDATE_MAX.
+   */
+  candidates?: number
 }
 
 export interface TopEmailsResult {
@@ -845,13 +858,210 @@ export async function fetchTopEmails(
   const token = await getAccessToken(interactive)
   const extra = search?.trim() ? ` ${search.trim()}` : ''
   const query = `${lookbackQuery(lookbackHours)}${extra}`
-  const ids = await listMessageIds(token, query, SCORE_CANDIDATE_CAP)
+  const pool = Math.min(
+    Math.max(opts.candidates ?? SCORE_CANDIDATE_CAP, limit),
+    SCORE_CANDIDATE_MAX,
+  )
+  const ids = await listMessageIds(token, query, pool)
   const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
   const emails = metas
     .map(metaToSummary)
     .sort((a, b) => b.score - a.score || b.date.localeCompare(a.date))
     .slice(0, limit)
   return { emails, mock: false }
+}
+
+// ---------------------------------------------------------------------------
+// Threads: the conversation behind an item
+// ---------------------------------------------------------------------------
+
+export interface ThreadMessage {
+  id: string
+  fromName: string
+  fromEmail: string
+  to: string
+  subject: string
+  /** ISO timestamp. */
+  date: string
+  /** Gmail's own one-line preview of the body. */
+  snippet: string
+  unread: boolean
+  /** True when the message was sent by the account owner. */
+  outbound: boolean
+  url: string
+}
+
+export interface ThreadTimeline {
+  threadId: string
+  subject: string
+  messages: ThreadMessage[]
+  /** Participants in first-seen order, for the hierarchy header. */
+  participants: string[]
+  mock: boolean
+}
+
+/**
+ * Accept whatever the user has to hand: a raw Gmail id, or a Gmail web URL
+ * copied from the address bar. Both carry the id as the last hex-ish segment.
+ */
+export function parseGmailId(input: string): string {
+  const raw = input.trim()
+  if (!raw) return ''
+  const tail = /^https?:\/\//i.test(raw)
+    ? (raw.split(/[#/?]/).filter(Boolean).pop() ?? '')
+    : raw.replace(/^#/, '')
+  // Two id shapes reach this: the API's 16-hex message/thread id, and the
+  // opaque mixed-case id the Gmail web UI puts in its URL (FMfcgz…). Accept
+  // both shapes here — only the API can say whether an id actually resolves,
+  // and rejecting on shape would turn "paste the link from my browser" into a
+  // dead end with no explanation.
+  return /^[A-Za-z0-9_-]{8,}$/.test(tail) ? tail : ''
+}
+
+interface RawThread {
+  id: string
+  messages?: (GmailMessageMeta & { snippet?: string })[]
+}
+
+/**
+ * The thread a message belongs to, oldest first.
+ *
+ * `id` may be a message id or a thread id — Gmail does not tell them apart by
+ * shape, so try the thread endpoint first and fall back to resolving the
+ * message to its threadId. That keeps "paste the id from the Gmail URL"
+ * working, which is the only id a user can actually get hold of.
+ */
+export async function fetchThread(
+  id: string,
+  interactive = false,
+): Promise<ThreadTimeline> {
+  const clean = parseGmailId(id)
+  if (!clean) throw new Error('Not a Gmail message id or link')
+  if (isMockMode()) return mockThread(clean)
+
+  const token = await getAccessToken(interactive)
+
+  let raw: RawThread | null = await getThread(token, clean)
+  if (!raw) {
+    // Not a thread id — try it as a message id and follow it to its thread.
+    const meta = await getMessageMeta(token, clean).catch(() => null)
+    if (meta?.threadId) raw = await getThread(token, meta.threadId)
+  }
+  if (!raw) {
+    // The id the Gmail web UI shows in its address bar is a different
+    // encoding from the API's, and there is no way to convert one to the
+    // other — so say that, rather than "not found".
+    if (!/^[0-9a-f]{8,}$/i.test(clean)) {
+      throw new Error(
+        'that looks like an id from the Gmail web address bar, which the API cannot resolve — attach the message from the Live inbox instead',
+      )
+    }
+    throw new Error('No thread found for that id')
+  }
+
+  const me = (await getProfileEmail(token)).toLowerCase()
+  const messages: ThreadMessage[] = (raw.messages ?? []).map((m) => {
+    const fromRaw = headerValue(m, 'From')
+    const { name, email } = parseFrom(fromRaw)
+    return {
+      id: m.id,
+      fromName: name,
+      fromEmail: email,
+      to: headerValue(m, 'To'),
+      subject: headerValue(m, 'Subject'),
+      date: m.internalDate
+        ? new Date(Number(m.internalDate)).toISOString()
+        : new Date(headerValue(m, 'Date') || 0).toISOString(),
+      snippet: m.snippet ?? '',
+      unread: (m.labelIds ?? []).includes('UNREAD'),
+      outbound: email.toLowerCase() === me,
+      url: gmailWebUrl(m.id),
+    }
+  })
+  messages.sort((a, b) => a.date.localeCompare(b.date))
+
+  const participants: string[] = []
+  for (const m of messages) {
+    const who = m.fromName || m.fromEmail
+    if (who && !participants.includes(who)) participants.push(who)
+  }
+
+  return {
+    threadId: raw.id,
+    subject: messages[0]?.subject || '(no subject)',
+    messages,
+    participants,
+    mock: false,
+  }
+}
+
+/** Returns null on 404 so the caller can try the other id interpretation. */
+async function getThread(
+  token: string,
+  id: string,
+): Promise<RawThread | null> {
+  const url = new URL(
+    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(id)}`,
+  )
+  url.searchParams.set('format', 'metadata')
+  for (const h of ['From', 'To', 'Subject', 'Date']) {
+    url.searchParams.append('metadataHeaders', h)
+  }
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 404 || res.status === 400) return null
+  if (res.status === 401) {
+    setCachedToken(null)
+    throw new Error('Gmail session expired — reconnect required')
+  }
+  if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
+  return (await res.json()) as RawThread
+}
+
+let cachedProfileEmail: string | null = null
+async function getProfileEmail(token: string): Promise<string> {
+  if (cachedProfileEmail !== null) return cachedProfileEmail
+  try {
+    const res = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) return (cachedProfileEmail = '')
+    const data = (await res.json()) as { emailAddress?: string }
+    return (cachedProfileEmail = data.emailAddress ?? '')
+  } catch {
+    // Only used to mark messages as outbound; failing is cosmetic.
+    return (cachedProfileEmail = '')
+  }
+}
+
+function mockThread(id: string): ThreadTimeline {
+  const base = Date.now() - 6 * 86400000
+  const step = 36 * 3600000
+  const cast = [
+    { who: 'Sample Counsel', out: false, snippet: 'Attaching the filing for your review — let me know before Friday.' },
+    { who: 'You', out: true, snippet: 'Thanks — reviewing today, one question on section 4.' },
+    { who: 'Sample Counsel', out: false, snippet: 'Section 4 is the buy-back window. Confirming the deadline stands.' },
+  ]
+  return {
+    threadId: id,
+    subject: 'Sample: thread timeline',
+    participants: ['Sample Counsel', 'You'],
+    mock: true,
+    messages: cast.map((c, i) => ({
+      id: `${id}-${i}`,
+      fromName: c.who,
+      fromEmail: c.out ? 'you@example.com' : 'counsel@example.com',
+      to: c.out ? 'counsel@example.com' : 'you@example.com',
+      subject: 'Sample: thread timeline',
+      date: new Date(base + i * step).toISOString(),
+      snippet: c.snippet,
+      unread: false,
+      outbound: c.out,
+      url: '',
+    })),
+  }
 }
 
 // ---------------------------------------------------------------------------

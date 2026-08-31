@@ -13,7 +13,7 @@ import { getWidget } from './widgets/registry'
 import { TabBar } from './components/TabBar'
 import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
-import { GmailAuthBar } from './components/GmailAuthBar'
+import { GoogleAuthBar } from './components/GoogleAuthBar'
 import { GlobalSettings } from './components/GlobalSettings'
 import { WeeklyBriefing } from './components/WeeklyBriefing'
 
@@ -166,7 +166,7 @@ export default function App() {
           onRename={renameTab}
         />
         <div className="app__meta">
-          <GmailAuthBar />
+          <GoogleAuthBar />
           {activeTab && (
             <span className="app__count">
               {filledCount}/{activeTab.tiles.length} tiles

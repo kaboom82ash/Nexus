@@ -698,6 +698,65 @@ a.mailrow__main--link:hover .mailrow__subject {
   background: rgba(209, 160, 84, 0.1);
 }
 
+/* ---------- Header service indicators ---------- */
+.authbar--services {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.svc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: inherit;
+}
+.svc__icon {
+  font-size: 12px;
+  line-height: 1;
+  /* A disconnected service reads as inert before it reads as a label. */
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.svc__state {
+  font-weight: 700;
+  font-size: 11px;
+}
+.svc--on {
+  color: var(--text);
+  border-color: #2f7d52;
+  cursor: default;
+}
+.svc--on .svc__icon {
+  filter: none;
+  opacity: 1;
+}
+.svc--on .svc__state {
+  color: #4ade80;
+}
+.svc--off {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.svc--off .svc__state {
+  color: var(--accent-soft);
+}
+.svc--off:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.svc--off:hover .svc__state {
+  color: #fff;
+}
+.svc[disabled] {
+  cursor: default;
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   border: 1px solid var(--border-strong);
