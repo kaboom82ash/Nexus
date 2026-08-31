@@ -43,8 +43,8 @@
   // Once connected the page keeps itself current on its own. Polling pauses
   // while the tab is hidden — a background tab burning Gmail quota every few
   // minutes helps nobody — and catches up when it comes back.
-  var AUTO_SYNC_MS = 5 * 60 * 1000
-  var STALE_MS = 2 * 60 * 1000
+  var AUTO_SYNC_MS = 60 * 60 * 1000
+  var STALE_MS = 10 * 60 * 1000
 
   /** Own punch-list items and thread pins, kept beside the page's own state. */
   var OWN_KEY = 'ak-briefing-own'
@@ -316,15 +316,21 @@
     '.sync-stamp__new{font-size:12px;color:var(--accent);font-weight:600;margin-top:2px}',
     '.sync-stamp__new--quiet{color:var(--muted);font-weight:400}',
     '.sweep-stamp{font-size:11px;color:var(--muted)}',
-    '.stat-rows{max-width:1180px;margin:18px auto 0}',
-    '.stat-row{margin:0;border-radius:0}',
-    '.stat-rows .stat-row:first-child{border-radius:10px 10px 0 0}',
-    '.stat-rows .stat-row+.stat-row{border-top:none}',
+    '.stat-rows{max-width:1180px;margin:14px auto 0}',
+    '.stat-toggle{font:inherit;font-size:11px;font-weight:700;letter-spacing:.06em;',
+    'text-transform:uppercase;color:var(--muted);background:none;border:none;',
+    'padding:2px 0 8px;cursor:pointer;display:flex;align-items:center;gap:6px}',
+    '.stat-toggle:hover{color:var(--ink)}',
+    '.stat-rows.is-collapsed .stat-body{display:none}',
+    '.stat-row{margin:0 0 10px;border:none;background:none;border-radius:0;',
+    'gap:10px;overflow:visible}',
     '.stat-row--punch{grid-template-columns:repeat(4,minmax(0,1fr))}',
     '.stat-row--cal{grid-template-columns:repeat(3,minmax(0,1fr)) 1.4fr}',
-    '.stat-row--mail{grid-template-columns:1fr}',
-    '@media (max-width:860px){.stat-row--punch,.stat-row--cal{',
+    '.stat-row--mail{grid-template-columns:repeat(4,minmax(0,1fr))}',
+    '@media (max-width:860px){.stat-row--punch,.stat-row--cal,.stat-row--mail{',
     'grid-template-columns:repeat(2,minmax(0,1fr))}}',
+    '.stat-rows .stat{border-radius:12px;border:1px solid var(--line);',
+    'background:var(--surface);padding:12px 14px}',
     '.stat-cats{font-family:"IBM Plex Mono",monospace;font-size:12.5px;',
     'color:var(--ink);margin-top:2px}',
     '.live-select,.live-days{font:inherit;font-size:12px;padding:4px 6px;border-radius:8px;',
@@ -422,6 +428,94 @@
     '.mon-tile .mon-timeline{border-left-color:currentColor}',
     '.mon-tile .mon-msg::before{background:currentColor}',
     '.mon-tile.is-done{opacity:.55}',
+
+    '.gd-item{border:1px solid var(--line);border-radius:12px;background:var(--surface);',
+    'padding:14px 16px;margin-bottom:14px}',
+    '.gd-item__head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;',
+    'margin-bottom:10px}',
+    '.gd-draft+.gd-draft{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}',
+    '.gd-draft__meta{display:flex;align-items:center;gap:8px;font-size:11.5px;',
+    'color:var(--muted);margin-bottom:6px}',
+    '.gd-item .draft-body{border:1px solid var(--line);border-radius:8px;',
+    'background:var(--surface-2);font-size:13px;padding:12px}',
+
+    '.prep-out{opacity:.4}',
+    '.prep-out td{text-decoration:line-through}',
+    '.prep-x{font:inherit;font-size:12px;line-height:1;padding:2px 7px;border-radius:6px;',
+    'border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}',
+    '.prep-x:hover{border-color:var(--critical);color:var(--critical)}',
+
+    '.hrs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;',
+    'margin-bottom:22px}',
+    '@media (max-width:760px){.hrs-grid{grid-template-columns:1fr}}',
+    '.hrs-card{border:1px solid var(--line);border-radius:12px;background:var(--surface);',
+    'padding:14px 16px}',
+    '.hrs-card__head{font-size:11px;font-weight:700;letter-spacing:.06em;',
+    'text-transform:uppercase;color:var(--muted);margin-bottom:10px}',
+    '.hrs-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12.5px}',
+    '.hrs-name{flex:0 0 34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.hrs-bar{flex:1;height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden}',
+    '.hrs-fill{display:block;height:100%;background:var(--accent)}',
+    '.hrs-val{flex:0 0 auto;color:var(--muted);font-size:11.5px}',
+
+    '.wk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;',
+    'margin-bottom:22px}',
+    '@media (max-width:900px){.wk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}',
+    '@media (max-width:560px){.wk-grid{grid-template-columns:1fr}}',
+    '.wk-day{border:1px solid var(--line);border-radius:12px;background:var(--surface);',
+    'padding:10px;min-height:96px}',
+    '.wk-day--today{border-color:var(--accent)}',
+    '.wk-day__head{font-size:11px;font-weight:700;text-transform:uppercase;',
+    'letter-spacing:.05em;color:var(--muted);display:flex;justify-content:space-between;',
+    'margin-bottom:8px}',
+    '.wk-day--today .wk-day__head{color:var(--accent)}',
+    '.wk-day__num{font-family:"IBM Plex Mono",monospace}',
+    '.wk-day__empty{color:var(--muted);font-size:12px}',
+    '.wk-ev{display:block;font-size:11.5px;line-height:1.3;padding:5px 7px;',
+    'border-radius:8px;margin-bottom:5px;text-decoration:none;color:#0d1412;',
+    'background:var(--cat-personal)}',
+    '.wk-ev.cat-kids{background:var(--cat-kids)}',
+    '.wk-ev.cat-home{background:var(--cat-home)}',
+    '.wk-ev.cat-finance{background:var(--cat-finance)}',
+    '.wk-ev.cat-health{background:var(--cat-health)}',
+    '.wk-ev.cat-lifestyle{background:var(--cat-lifestyle)}',
+    '.wk-ev__t{display:block;font-size:10px;opacity:.75}',
+
+    // Severity as the whole tile, everywhere items are listed — Actions &
+    // Inbox, the punch list, the calendar — not just on the Monitor board.
+    // Each rule sets its own ink so text keeps contrast on the fill; children
+    // inherit it so the page's link and muted tokens do not fight the colour.
+    '.cat-row.sev-critical,.punch-row.sev-critical,.card.sev-critical{',
+    'background:var(--critical);color:#170a0a;border-color:transparent}',
+    '.cat-row.sev-high,.punch-row.sev-high,.card.sev-high{',
+    'background:var(--high);color:#1c1305;border-color:transparent}',
+    '.cat-row.sev-medium,.punch-row.sev-medium,.card.sev-medium{',
+    'background:var(--medium);color:#08131c;border-color:transparent}',
+    '.cat-row.sev-low,.punch-row.sev-low,.card.sev-low{',
+    'background:var(--low);color:#07160d;border-color:transparent}',
+    '.cat-row[class*="sev-"],.punch-row[class*="sev-"],.card[class*="sev-"]{',
+    'border-radius:10px}',
+    '.cat-row[class*="sev-"] *,.punch-row[class*="sev-"] *,.card[class*="sev-"] *{',
+    'color:inherit}',
+    // The page colours some titles by severity too; on a filled tile that is
+    // the same hue as the ground, so it has to give way.
+    '.cat-row[class*="sev-"] .cat-title,.cat-row[class*="sev-"] .cat-meta,',
+    '.card[class*="sev-"] .card-title,.punch-row[class*="sev-"] .punch-title{color:inherit}',
+    '.cat-row[class*="sev-"] .cat-meta,.card[class*="sev-"] .msg-meta{opacity:.8}',
+    '.cat-row[class*="sev-"] .mail-link,.cat-row[class*="sev-"] .cal-btn,',
+    '.card[class*="sev-"] .mail-link,.card[class*="sev-"] .cal-btn,',
+    '.punch-row[class*="sev-"] .mail-link{color:inherit;text-decoration:underline;',
+    'background:transparent;border-color:currentColor}',
+    // Pills and chips on a filled tile: outline, not another block of colour.
+    '.cat-row[class*="sev-"] .pill,.card[class*="sev-"] .pill,',
+    '.punch-row[class*="sev-"] .pill{background:rgba(0,0,0,.14);color:inherit}',
+    '.cat-row[class*="sev-"] select,.card[class*="sev-"] select,',
+    '.cat-row[class*="sev-"] .qa-btn,.card[class*="sev-"] .qa-btn{',
+    'background:rgba(0,0,0,.12);color:inherit;border-color:currentColor}',
+    '.cat-row[class*="sev-"] .live-attach{border-color:currentColor;color:inherit}',
+    '.cat-row[class*="sev-"] .live-attach:hover{background:rgba(0,0,0,.18)}',
+    '.cat-row[class*="sev-"] .new-badge,.card[class*="sev-"] .new-badge{',
+    'background:rgba(0,0,0,.2);color:inherit}',
   ].join('')
 
   function injectStyles() {
@@ -604,7 +698,10 @@
         '</div>' +
         '<div class="cat-grid-items live-items"></div>' +
         '</div>'
-      panel.insertBefore(section, panel.firstChild)
+      // Mail leads its panel; the calendar's live list sits AFTER the prep
+      // blocks, the hours dashboard and the week ahead.
+      if (spec.id === 'live-calendar') panel.appendChild(section)
+      else panel.insertBefore(section, panel.firstChild)
     }
     return section.querySelector('.live-items')
   }
@@ -659,7 +756,11 @@
       var link = '<div class="cat-links"><a class="mail-link" href="' + esc(mailHref(m)) +
         '" target="_blank" rel="noopener">✉️ Open in Gmail ↗</a>' +
         (m.id ? '<button type="button" class="live-attach" data-mid="' + esc(m.id) +
-          '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌 Add to punch list</button>' : '') +
+          '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌 Add to punch list</button>' +
+          '<button type="button" class="live-attach live-draft" data-mid="' + esc(m.id) +
+          '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
+          '" data-snippet="' + esc((m.reasons || []).join(', ')) +
+          '" title="Draft a reply to this message">✍️ Draft reply</button>' : '') +
         '</div>'
       // No data-cat: the page's own inferCategory() reads the title and always
       // returns one of its known keys, so a live item can never land in a
@@ -681,13 +782,23 @@
     setCount('live-inbox', items.length)
   }
 
-  function renderEvents(items, mock, newIds) {
+  function renderEvents(allItems, mock, newIds) {
     var fresh = newIds || []
+    // Future only, and inside the stated horizon. The API is asked for exactly
+    // this window, but the promise on screen is "the next 14 days" — so it is
+    // enforced here rather than trusted to the server's timeMin/timeMax.
+    var now = Date.now()
+    var horizon = now + EVENT_DAYS * 86400000
+    var items = (allItems || []).filter(function (ev) {
+      var t = new Date(ev.start).getTime()
+      return isFinite(t) && t >= now && t <= horizon
+    })
     var host = ensureSection({
       panelId: 'panel-calendar',
       id: 'live-calendar',
       heading: 'Live calendar',
-      sub: 'Next ' + EVENT_DAYS + ' days across every calendar you have switched on · check one to queue it',
+      sub: 'Every event in the next ' + EVENT_DAYS +
+        ' days, across every calendar you have switched on · check one to queue it',
       icon: '📅',
       label: 'Next ' + EVENT_DAYS + ' days',
       href: 'https://calendar.google.com/calendar/r',
@@ -909,6 +1020,7 @@
 
   // ---- masthead: sync stamp + the stat strip ------------------------------
 
+  var STATS_OPEN_KEY = 'ak-briefing-stats-open'
   var LAST_SYNC_KEY = 'ak-briefing-last-sync'
   var SEEN_KEY = 'ak-briefing-seen'
 
@@ -1119,14 +1231,369 @@
     if (!wrap) {
       wrap = el('div', 'stat-rows')
       wrap.id = 'stat-rows'
+      wrap.innerHTML =
+        '<button type="button" class="stat-toggle" aria-expanded="true">' +
+        '<span class="stat-toggle__caret">▾</span> Dashboard</button>' +
+        '<div class="stat-body"></div>'
       strips.parentNode.insertBefore(wrap, strips)
       // The page's own strip is superseded. `hidden` is not enough: the
       // attribute's display:none comes from the UA sheet and loses to the
       // page's `.stat-strip { display: grid }`.
       strips.style.display = 'none'
+
+      var toggle = wrap.querySelector('.stat-toggle')
+      toggle.addEventListener('click', function () {
+        var open = wrap.classList.toggle('is-collapsed') === false
+        toggle.setAttribute('aria-expanded', String(open))
+        toggle.querySelector('.stat-toggle__caret').textContent = open ? '▾' : '▸'
+        writeStored(STATS_OPEN_KEY, open ? '1' : '0')
+        syncScrollPadding()
+      })
+      if (readStored(STATS_OPEN_KEY, '1') === '0') {
+        wrap.classList.add('is-collapsed')
+        toggle.setAttribute('aria-expanded', 'false')
+        toggle.querySelector('.stat-toggle__caret').textContent = '▸'
+      }
     }
-    wrap.innerHTML = row1 + row2 + row3
+    wrap.querySelector('.stat-body').innerHTML = row1 + row2 + row3
     syncScrollPadding()
+  }
+
+
+
+  // ---- drafts -------------------------------------------------------------
+
+  /**
+   * Every generated draft is kept, per message, with the date it was written.
+   * A draft is a record of what you were going to say at a point in time, so
+   * regenerating adds a version rather than overwriting one.
+   */
+  function draftsFor(id) {
+    own.drafts = own.drafts || {}
+    return own.drafts[id] || []
+  }
+
+  function addDraft(id, meta, text, mock) {
+    own.drafts = own.drafts || {}
+    own.drafts[id] = own.drafts[id] || []
+    own.drafts[id].unshift({
+      text: text,
+      mock: !!mock,
+      at: new Date().toISOString(),
+      subject: meta.subject,
+      from: meta.from,
+    })
+    saveOwn()
+  }
+
+  function draftDate(iso) {
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
+  function generateDraft(bridge, meta, btn) {
+    var was = btn ? btn.textContent : ''
+    if (btn) { btn.disabled = true; btn.textContent = '✍️ Drafting…' }
+    return bridge
+      .draftReply({ id: meta.id, subject: meta.subject, from: meta.from, snippet: meta.snippet })
+      .then(function (res) {
+        if (btn) { btn.disabled = false; btn.textContent = was }
+        if (res.error || !res.text) {
+          setStatus(res.error || 'The model returned nothing', 'warn')
+          return
+        }
+        addDraft(meta.id, meta, res.text, res.mock)
+        renderDrafts(bridge)
+        if (typeof switchTab === 'function') switchTab('drafts')
+      })
+  }
+
+  /** A section in the Drafts tab holding every draft written here. */
+  function renderDrafts(bridge) {
+    var panel = document.getElementById('panel-drafts')
+    if (!panel) return
+    var host = document.getElementById('gen-drafts')
+    if (!host) {
+      host = el('section', '')
+      host.id = 'gen-drafts'
+      panel.insertBefore(host, panel.firstChild)
+      host.addEventListener('click', function (e) {
+        var copy = e.target.closest('.gd-copy')
+        if (copy) {
+          copyText(decodeURIComponent(copy.dataset.text))
+          copy.textContent = '✓ Copied'
+          setTimeout(function () { copy.textContent = '📋 Copy' }, 1800)
+          return
+        }
+        var regen = e.target.closest('.gd-regen')
+        if (regen) {
+          generateDraft(bridge, {
+            id: regen.dataset.id,
+            subject: regen.dataset.subject,
+            from: regen.dataset.from,
+          }, regen)
+          return
+        }
+        var del = e.target.closest('.gd-del')
+        if (del && confirm('Delete this draft?')) {
+          var list = own.drafts[del.dataset.id] || []
+          list.splice(parseInt(del.dataset.idx, 10), 1)
+          if (!list.length) delete own.drafts[del.dataset.id]
+          saveOwn()
+          renderDrafts(bridge)
+        }
+      })
+    }
+
+    own.drafts = own.drafts || {}
+    var ids = Object.keys(own.drafts).filter(function (id) {
+      return (own.drafts[id] || []).length
+    })
+
+    var head =
+      '<div class="section-head"><h2>✍️ Your generated drafts</h2>' +
+      '<span class="sub">Written from the thread, kept per email with the date each was generated · ' +
+      'generate one from any message on Actions &amp; Inbox</span></div>'
+
+    if (!ids.length) {
+      host.innerHTML = head +
+        '<p class="note">No drafts yet. On Actions &amp; Inbox, press <b>✍️ Draft reply</b> on any message.</p>'
+      return
+    }
+
+    host.innerHTML = head + ids.map(function (id) {
+      var list = own.drafts[id]
+      var first = list[0]
+      return '<div class="gd-item">' +
+        '<div class="gd-item__head">' +
+        '<b>' + esc(first.subject || '(no subject)') + '</b>' +
+        '<span class="note"> · ' + esc(first.from || '') + ' · ' +
+        list.length + ' draft' + (list.length === 1 ? '' : 's') + '</span>' +
+        '<a class="mail-link" href="https://mail.google.com/mail/u/0/#all/' + esc(id) +
+        '" target="_blank" rel="noopener">✉️ Open ↗</a>' +
+        '<button type="button" class="live-btn gd-regen" data-id="' + esc(id) +
+        '" data-subject="' + esc(first.subject || '') + '" data-from="' + esc(first.from || '') +
+        '">✍️ New version</button>' +
+        '</div>' +
+        list.map(function (d, i) {
+          return '<div class="gd-draft">' +
+            '<div class="gd-draft__meta">Generated ' + esc(draftDate(d.at)) +
+            (d.mock ? ' <span class="live-tag">sample</span>' : '') +
+            '<button type="button" class="qa-btn gd-copy" data-text="' +
+            encodeURIComponent(d.text) + '">📋 Copy</button>' +
+            '<button type="button" class="qa-btn gd-del" data-id="' + esc(id) +
+            '" data-idx="' + i + '">✕</button></div>' +
+            '<div class="draft-body">' + esc(d.text) + '</div>' +
+            '</div>'
+        }).join('') +
+        '</div>'
+    }).join('')
+  }
+
+  // ---- Calendar tab -------------------------------------------------------
+
+  var CAL_LOOKAHEAD_DAYS = 14
+
+  function dismissedPrep() {
+    own.prepOut = own.prepOut || {}
+    return own.prepOut
+  }
+
+  /**
+   * Add a dismiss control to each suggested prep block, and total only what
+   * survives. A suggestion you have decided against should stop counting
+   * toward the prep time you are being asked to find.
+   */
+  function wirePrepBlocks() {
+    var tbody = document.getElementById('prep-tbody')
+    if (!tbody) return
+    var out = dismissedPrep()
+
+    Array.prototype.forEach.call(tbody.rows, function (tr) {
+      var cb = tr.querySelector('.prep-select')
+      if (!cb) return
+      var pid = cb.dataset.pid
+      tr.dataset.prepId = pid
+      if (out[pid]) tr.classList.add('prep-out')
+
+      if (!tr.querySelector('.prep-x')) {
+        var td = document.createElement('td')
+        var x = el('button', 'prep-x', out[pid] ? '↺' : '✕')
+        x.type = 'button'
+        x.title = out[pid] ? 'Put this prep block back' : 'Not needed — drop this prep block'
+        x.addEventListener('click', function () {
+          var now = dismissedPrep()
+          if (now[pid]) delete now[pid]
+          else {
+            now[pid] = true
+            // Dropping a block must also un-queue it, or it lingers on the
+            // punch list as work you have just decided not to do.
+            if (cb.checked) cb.click()
+          }
+          saveOwn()
+          tr.classList.toggle('prep-out', !!now[pid])
+          x.textContent = now[pid] ? '↺' : '✕'
+          x.title = now[pid] ? 'Put this prep block back' : 'Not needed — drop this prep block'
+          renderPrepTotals()
+        })
+        td.appendChild(x)
+        tr.appendChild(td)
+      }
+      cb.addEventListener('change', renderPrepTotals)
+    })
+
+    var head = document.querySelector('#panel-calendar thead tr')
+    if (head && !head.dataset.prepX) {
+      head.dataset.prepX = '1'
+      head.appendChild(document.createElement('th'))
+    }
+    renderPrepTotals()
+  }
+
+  function renderPrepTotals() {
+    var tbody = document.getElementById('prep-tbody')
+    var note = document.getElementById('prep-selected-note')
+    if (!tbody || !note) return
+    var out = dismissedPrep()
+    var proposed = 0
+    var selected = 0
+    var kept = 0
+    Array.prototype.forEach.call(tbody.rows, function (tr) {
+      var cb = tr.querySelector('.prep-select')
+      if (!cb || out[tr.dataset.prepId]) return
+      var mins = parseInt(cb.dataset.mins, 10) || 0
+      proposed += mins
+      kept++
+      if (cb.checked) selected += mins
+    })
+    var dropped = Object.keys(out).length
+    note.innerHTML =
+      '<b>Prep suggested: ' + fmtHours(proposed / 60) + ' across ' + kept + ' block' +
+      (kept === 1 ? '' : 's') + '</b> · selected ' + fmtHours(selected / 60) +
+      (dropped ? ' · ' + dropped + ' dropped' : '') +
+      ' — all proposed for <b>Monday</b>. Checking a row adds it to the punch list too; ✕ drops one you do not need.'
+  }
+
+  // ---- calendar hours dashboard + the week starting today -----------------
+
+  function dayKey(d) {
+    return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()
+  }
+
+  /**
+   * Replace the page's static week grids. They are written at sweep time, so
+   * they show a week that has already partly happened — a calendar view whose
+   * first columns are in the past is worse than none.
+   */
+  function renderCalendar(events) {
+    var panel = document.getElementById('panel-calendar')
+    if (!panel) return
+
+    // Hide the sweep-time week tables once, on first render.
+    if (!panel.dataset.weeksHidden) {
+      panel.dataset.weeksHidden = '1'
+      Array.prototype.forEach.call(panel.querySelectorAll('section'), function (sec) {
+        if (sec.querySelector('.week-grid')) sec.style.display = 'none'
+      })
+    }
+
+    var now = Date.now()
+    var horizon = now + CAL_LOOKAHEAD_DAYS * 86400000
+    var future = (events || []).filter(function (ev) {
+      var t = new Date(ev.start).getTime()
+      return t >= now && t <= horizon
+    })
+
+    var host = document.getElementById('cal-live')
+    if (!host) {
+      host = el('section', 'no-check')
+      host.id = 'cal-live'
+      var prep = panel.querySelector('section')
+      if (prep && prep.nextSibling) panel.insertBefore(host, prep.nextSibling)
+      else panel.appendChild(host)
+    }
+
+    host.innerHTML = hoursDashboardHtml(future) + weekAheadHtml(future)
+  }
+
+  function hoursDashboardHtml(events) {
+    var weekEnd = Date.now() + 7 * 86400000
+    var inWeek = events.filter(function (ev) {
+      return new Date(ev.start).getTime() <= weekEnd
+    })
+    var byCal = {}
+    var byCat = {}
+    var total = 0
+    inWeek.forEach(function (ev) {
+      var h = hoursOf(ev)
+      total += h
+      byCal[ev.calendar || 'Calendar'] = (byCal[ev.calendar || 'Calendar'] || 0) + h
+      var c = eventCategory(ev)
+      byCat[c] = (byCat[c] || 0) + h
+    })
+
+    function bars(map) {
+      var keys = Object.keys(map).sort(function (a, b) { return map[b] - map[a] })
+      if (!keys.length) return '<div class="note">Nothing scheduled.</div>'
+      var max = map[keys[0]] || 1
+      return keys.map(function (k) {
+        return '<div class="hrs-row">' +
+          '<span class="hrs-name">' + esc(k) + '</span>' +
+          '<span class="hrs-bar"><span class="hrs-fill" style="width:' +
+          Math.round((map[k] / max) * 100) + '%"></span></span>' +
+          '<span class="hrs-val mono">' + fmtHours(map[k]) + '</span></div>'
+      }).join('')
+    }
+
+    return (
+      '<div class="section-head"><h2>Hours ahead</h2>' +
+      '<span class="sub">Next 7 days · ' + fmtHours(total) + ' scheduled in total</span></div>' +
+      '<div class="hrs-grid">' +
+      '<div class="hrs-card"><div class="hrs-card__head">Per calendar</div>' + bars(byCal) + '</div>' +
+      '<div class="hrs-card"><div class="hrs-card__head">Per category</div>' + bars(byCat) + '</div>' +
+      '</div>'
+    )
+  }
+
+  function weekAheadHtml(events) {
+    var days = []
+    for (var i = 0; i < 7; i++) {
+      var d = new Date()
+      d.setDate(d.getDate() + i)
+      days.push({ date: d, key: dayKey(d), items: [] })
+    }
+    var index = {}
+    days.forEach(function (d) { index[d.key] = d })
+    events.forEach(function (ev) {
+      var d = index[dayKey(new Date(ev.start))]
+      if (d) d.items.push(ev)
+    })
+
+    return (
+      '<div class="section-head"><h2>The week ahead</h2>' +
+      '<span class="sub">Seven days from today · ' + CAL_LOOKAHEAD_DAYS +
+      '-day horizon below</span></div>' +
+      '<div class="wk-grid">' +
+      days.map(function (d, i) {
+        return '<div class="wk-day' + (i === 0 ? ' wk-day--today' : '') + '">' +
+          '<div class="wk-day__head">' +
+          esc(d.date.toLocaleDateString('en-US', { weekday: 'short' })) +
+          '<span class="wk-day__num">' + d.date.getDate() + '</span></div>' +
+          (d.items.length
+            ? d.items.map(function (ev) {
+                return '<a class="wk-ev cat-' + esc(eventCategory(ev)) + '" href="' +
+                  esc(eventHref(ev)) + '" target="_blank" rel="noopener">' +
+                  '<span class="wk-ev__t mono">' +
+                  esc(ev.allDay ? 'all day' : new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) +
+                  '</span>' + esc(ev.title) + '</a>'
+              }).join('')
+            : '<div class="wk-day__empty">—</div>') +
+          '</div>'
+      }).join('') +
+      '</div>'
+    )
   }
 
   // ---- Monitor tab: filters, thread timelines, history --------------------
@@ -1444,6 +1911,7 @@
         renderEvents(eventItems, events.mock, newEvents)
         rewirePage()
         lastData = { events: eventItems, mail: mailItems }
+        renderCalendar(eventItems)
         renderMonitor(bridge)
         renderStats(eventItems, mailItems)
 
@@ -1496,9 +1964,11 @@
   // ---- automatic updates --------------------------------------------------
 
   function autoNote() {
-    return autoTimer
-      ? ' · auto every ' + Math.round(AUTO_SYNC_MS / 60000) + ' min'
-      : ''
+    if (!autoTimer) return ''
+    var mins = Math.round(AUTO_SYNC_MS / 60000)
+    return ' · auto ' + (mins % 60 === 0
+      ? 'hourly'
+      : 'every ' + mins + ' min')
   }
 
   /** True once at least one service is connected and there is live data to pull. */
@@ -1589,9 +2059,18 @@
     updateRangeUi()
 
     document.addEventListener('click', function (e) {
+      var draft = e.target.closest('.live-draft')
+      if (draft) {
+        generateDraft(bridge, {
+          id: draft.dataset.mid,
+          subject: draft.dataset.subject || '',
+          from: draft.dataset.from || '',
+          snippet: draft.dataset.snippet || '',
+        }, draft)
+        return
+      }
       var att = e.target.closest('.live-attach')
-      if (!att) return
-      prefillOwnForm(att.dataset.title || '', att.dataset.mid || '')
+      if (att) prefillOwnForm(att.dataset.title || '', att.dataset.mid || '')
     })
 
     // Own items and the Monitor tab work with or without a connection: they
@@ -1602,6 +2081,9 @@
     renderMonitor(bridge)
     renderSyncStamp([], [])
     renderStats([], [])
+    wirePrepBlocks()
+    renderCalendar([])
+    renderDrafts(bridge)
     watchPunchList(bridge)
 
     var st = bridge.status()

@@ -26,6 +26,7 @@ import {
   requestScopes,
 } from './gmail'
 import { CALENDAR_SCOPE, fetchUpcomingEvents } from './calendar'
+import { isLlmMock, runPrompt } from './llm'
 
 export interface BridgeStatus {
   /** No Google Client ID configured — everything below is sample data. */
@@ -117,6 +118,13 @@ export interface BriefingBridge {
   fetchThread(id: string): Promise<BridgeThread>
   /** Normalize a pasted Gmail id or URL; '' when it is neither. */
   parseId(input: string): string
+  /** Draft a reply to a message. `mock` is true without an Anthropic key. */
+  draftReply(input: {
+    id: string
+    subject: string
+    from: string
+    snippet?: string
+  }): Promise<{ text: string; mock: boolean; error?: string }>
 }
 
 function status(): BridgeStatus {
@@ -155,6 +163,47 @@ const bridge: BriefingBridge = {
 
   parseId(input: string) {
     return parseGmailId(input)
+  },
+
+  async draftReply({ id, subject, from, snippet }) {
+    try {
+      // The thread, when it can be read, is what makes a draft worth having —
+      // a reply written from a subject line alone repeats what is already
+      // said. Failing to fetch it is not fatal; drafting from the subject is.
+      let history = ''
+      try {
+        const t = await fetchThread(id)
+        if (t.messages.length) {
+          history = t.messages
+            .slice(-6)
+            .map(
+              (m) =>
+                `${m.outbound ? 'ME' : m.fromName || m.fromEmail} (${new Date(
+                  m.date,
+                ).toDateString()}): ${m.snippet}`,
+            )
+            .join('\n')
+        }
+      } catch {
+        /* draft from the subject instead */
+      }
+
+      const text = await runPrompt({
+        model: 'claude-sonnet-5',
+        maxTokens: 700,
+        onToken: () => {},
+        system:
+          'You draft email replies for a busy professional. Return ONLY the reply body — no subject line, no preamble, no commentary, no placeholders in brackets unless a fact is genuinely unknown. Match the sender\u2019s register. Be concise and specific: say what will happen and when. Never invent facts, figures, dates or commitments that are not in the thread.',
+        prompt:
+          `Draft a reply to this email.\n\nFrom: ${from}\nSubject: ${subject}\n` +
+          (snippet ? `Preview: ${snippet}\n` : '') +
+          (history ? `\nThread so far (oldest first):\n${history}\n` : '') +
+          '\nWrite the reply body only.',
+      })
+      return { text: text.trim(), mock: isLlmMock() }
+    } catch (err) {
+      return { text: '', mock: isLlmMock(), error: message(err, 'Draft failed') }
+    }
   },
 
   async fetchThread(id: string) {
