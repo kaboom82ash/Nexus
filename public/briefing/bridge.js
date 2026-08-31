@@ -358,6 +358,24 @@
     '.live-attach:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}',
 
     '.mon-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
+    '.mon-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}',
+    '.cat-tile{display:flex;flex-direction:column;align-items:center;gap:2px;',
+    'min-width:88px;padding:9px 12px;border-radius:12px;font:inherit;cursor:pointer;',
+    'border:1px solid var(--line);background:var(--surface);color:var(--ink);',
+    'border-bottom-width:3px;transition:transform .08s ease}',
+    '.cat-tile:hover{transform:translateY(-1px)}',
+    '.cat-tile__icon{font-size:17px;line-height:1}',
+    '.cat-tile__name{font-size:11px;font-weight:600}',
+    '.cat-tile__n{font-size:11px;color:var(--muted)}',
+    '.cat-tile.is-on{background:var(--surface-2);border-color:var(--accent)}',
+    '.cat-tile.is-on .cat-tile__n{color:var(--ink)}',
+    '.cat-tile.cat-personal{border-bottom-color:var(--cat-personal)}',
+    '.cat-tile.cat-kids{border-bottom-color:var(--cat-kids)}',
+    '.cat-tile.cat-home{border-bottom-color:var(--cat-home)}',
+    '.cat-tile.cat-finance{border-bottom-color:var(--cat-finance)}',
+    '.cat-tile.cat-health{border-bottom-color:var(--cat-health)}',
+    '.cat-tile.cat-lifestyle{border-bottom-color:var(--cat-lifestyle)}',
+    '.cat-tile--all{border-bottom-color:var(--accent)}',
     '.mon-q{flex:1 1 240px}',
     '.mon-count{color:var(--muted);font-size:12px;margin-bottom:10px;',
     'font-family:"IBM Plex Mono",monospace}',
@@ -551,6 +569,13 @@
     '.wk-ev.cat-health{background:var(--cat-health)}',
     '.wk-ev.cat-lifestyle{background:var(--cat-lifestyle)}',
     '.wk-ev__t{display:block;font-size:10px;opacity:.75}',
+    '.wk-table{width:100%;table-layout:fixed}',
+    '.wk-table th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;',
+    'color:var(--muted);padding:8px 6px;text-align:left}',
+    '.wk-table th.today{color:var(--accent)}',
+    '.wk-table td{vertical-align:top;padding:6px;border-top:1px solid var(--line)}',
+    '.wk-table .wg-label{font-size:12px;font-weight:600;white-space:nowrap;width:150px}',
+    '.wk-table .wk-ev{margin-bottom:4px}',
 
     // Severity as the whole tile, everywhere items are listed — Actions &
     // Inbox, the punch list, the calendar — not just on the Monitor board.
@@ -794,39 +819,11 @@
     if (c) c.textContent = n + (n === 1 ? ' item' : ' items')
   }
 
-  function refreshMailSubhead() {
-    var sub = document.querySelector('#live-inbox .section-head .sub')
-    if (sub) {
-      sub.textContent =
-        'Top messages from the last ' + currentRange().label +
-        ', ranked by the dashboard’s priority score · check one to queue it'
-    }
-  }
-
-  function renderMail(items, mock, newIds) {
-    var fresh = newIds || []
-    var host = ensureSection({
-      panelId: 'panel-actions',
-      id: 'live-inbox',
-      heading: 'Live inbox',
-      sub: 'Top messages from the last ' + currentRange().label +
-        ', ranked by the dashboard’s priority score · check one to queue it',
-      icon: '✉️',
-      label: 'Live inbox',
-      href: 'https://mail.google.com/mail/u/0/#inbox',
-      linkLabel: '✉️ Open Gmail ↗',
-    })
-    if (!host) return
-    if (!items.length) {
-      host.innerHTML = '<div class="cat-row no-check"><div class="cat-main"><div class="cat-meta">Nothing in the last ' + currentRange().label + '.</div></div></div>'
-      return
-    }
-    var html = items.map(function (m) { return mailRowHtml(m, mock, fresh) }).join('')
-    host.innerHTML = html
-    refreshMailSubhead()
-    setCount('live-inbox', items.length)
-  }
-
+  /**
+   * Mail no longer has a section on Actions & Inbox — it has its own 24/7
+   * tab, and the same messages listed in two places meant two sets of
+   * checkboxes writing to one punch-list entry.
+   */
   /** One live message as a row the page's injectCheckables() will adopt. */
   function mailRowHtml(m, mock, fresh) {
     var sev = mailSeverity(m.score)
@@ -1610,16 +1607,34 @@
     } catch (err) {}
   }
 
-  /** Add the ✓ control to every checkable row, and hide the closed ones. */
+  /**
+   * `injectCheckables` only adopts rows that carry a link — that is how the
+   * page tells an actionable item from prose. But "not applicable" applies to
+   * anything on screen, so closing is offered on every category row and card,
+   * linked or not. Unlinked ones get an id derived from their own text.
+   */
+  function closableId(node) {
+    if (node.dataset.checkId) return node.dataset.checkId
+    if (node.dataset.closeKey) return node.dataset.closeKey
+    var t = node.querySelector('.cat-title, .card-title')
+    var text = (t ? t.textContent : node.textContent).trim()
+    var id = syncKey('item', text.slice(0, 60))
+    node.dataset.closeKey = id
+    return id
+  }
+
   function applyClosed() {
-    var rows = document.querySelectorAll('main [data-check-id]')
+    var rows = document.querySelectorAll(
+      'main .cat-row, main .card, main [data-check-id]',
+    )
     Array.prototype.forEach.call(rows, function (row) {
-      var id = row.dataset.checkId
-      if (!row.querySelector('.close-btn') && !row.classList.contains('no-check')) {
+      if (row.classList.contains('no-check')) return
+      var id = closableId(row)
+      if (!row.querySelector('.close-btn')) {
         var btn = el('button', 'close-btn', '✓')
         btn.type = 'button'
         btn.dataset.closeId = id
-        btn.title = 'Done — close this and stop it coming back'
+        btn.title = 'Done or not applicable — close this and stop it coming back'
         var host = row.querySelector('.cat-links, .qa-strip, .cat-main') || row
         if (row.tagName === 'TR') {
           var td = document.createElement('td')
@@ -1678,18 +1693,54 @@
     nav.insertBefore(btn, nav.children[1] || null)
   }
 
-  function mailSectionHtml(title, sub, items, mock, emptyText) {
-    var body = items.length
-      ? '<div class="cat-grid-band live-band"><div class="cat-grid-items">' +
-        items.map(function (m) { return mailRowHtml(m, mock, []) }).join('') +
+  var CATEGORY_META = {
+    personal: { icon: '📧', label: 'Personal & career' },
+    kids: { icon: '🧒', label: 'Kids' },
+    home: { icon: '🏠', label: 'Home' },
+    finance: { icon: '💰', label: 'Finance' },
+    health: { icon: '🏥', label: 'Health' },
+    lifestyle: { icon: '🎡', label: 'Lifestyle' },
+  }
+
+  /**
+   * Mail grouped into the page's own category bands, so a run of messages
+   * reads as areas of your life rather than one undifferentiated list.
+   */
+  function categoryBandsHtml(items, mock, fresh) {
+    var groups = {}
+    items.forEach(function (m) {
+      var c = inferMailCategory(m)
+      ;(groups[c] = groups[c] || []).push(m)
+    })
+    var keys = Object.keys(groups).sort(function (a, b) {
+      return groups[b].length - groups[a].length
+    })
+    return keys.map(function (c) {
+      var meta = CATEGORY_META[c] || { icon: '📧', label: c }
+      var list = groups[c]
+      return '<div class="cat-grid-band band-' + esc(c) + '">' +
+        '<div class="cat-grid-label">' +
+        '<span class="icon">' + meta.icon + '</span>' +
+        '<span class="name">' + esc(meta.label) + '</span>' +
+        '<span class="cnt">' + list.length + (list.length === 1 ? ' email' : ' emails') + '</span>' +
+        '</div>' +
+        '<div class="cat-grid-items">' +
+        list.map(function (m) { return mailRowHtml(m, mock, fresh) }).join('') +
         '</div></div>'
+    }).join('')
+  }
+
+  function mailSectionHtml(title, sub, items, mock, emptyText, fresh) {
+    var body = items.length
+      ? categoryBandsHtml(items, mock, fresh || [])
       : '<p class="note">' + esc(emptyText) + '</p>'
     return '<div class="section-head"><h2>' + esc(title) + '</h2>' +
       '<span class="sub">' + esc(sub) + '</span></div>' + body
   }
 
-  function renderDaily(items, mock) {
+  function renderDaily(items, mock, newIds) {
     if (!dailyPanel) return
+    var fresh = newIds || []
     var now = Date.now()
     var since = (items || []).filter(function (m) {
       return previousVisit && new Date(m.date).getTime() > previousVisit
@@ -1708,15 +1759,17 @@
 
     document.getElementById('mail-since').innerHTML = mailSectionHtml(
       '🆕 Since your last visit',
-      previousVisit ? 'Arrived after ' + sinceLabel : 'First visit on this browser — nothing to compare against yet',
+      previousVisit ? 'Arrived after ' + sinceLabel + ' · grouped by category' : 'First visit on this browser — nothing to compare against yet',
       since, mock,
       previousVisit ? 'Nothing new since you were last here.' : 'Come back and this will show what arrived while you were away.',
+      fresh,
     )
     document.getElementById('mail-24h').innerHTML = mailSectionHtml(
       '🕐 Last 24 hours',
-      'Everything that landed today, ranked by the dashboard’s priority score · check one to queue it',
+      'Everything that landed today, grouped by category · check one to queue it, ✓ to close it',
       day, mock,
       'Nothing in the last 24 hours.',
+      fresh,
     )
 
     var count = document.getElementById('daily-tab-count')
@@ -1910,6 +1963,8 @@
     if (!panel.dataset.weeksHidden) {
       panel.dataset.weeksHidden = '1'
       Array.prototype.forEach.call(panel.querySelectorAll('section'), function (sec) {
+        // Ours is rendered later into #cal-live; only the sweep-time ones
+        // exist at this point, so this cannot hide the new grid.
         if (sec.querySelector('.week-grid')) sec.style.display = 'none'
       })
     }
@@ -1972,42 +2027,61 @@
     )
   }
 
+  /**
+   * One row per calendar, columns per day — the shape the page's own week grid
+   * used, which reads far better than a flat day list when several calendars
+   * are in play.
+   */
   function weekAheadHtml(events) {
     var days = []
     for (var i = 0; i < 7; i++) {
       var d = new Date()
       d.setDate(d.getDate() + i)
-      days.push({ date: d, key: dayKey(d), items: [] })
+      days.push({ date: d, key: dayKey(d) })
     }
-    var index = {}
-    days.forEach(function (d) { index[d.key] = d })
+
+    var rows = {}
     events.forEach(function (ev) {
-      var d = index[dayKey(new Date(ev.start))]
-      if (d) d.items.push(ev)
+      var name = ev.calendar || 'Calendar'
+      if (!rows[name]) {
+        rows[name] = {}
+        days.forEach(function (d) { rows[name][d.key] = [] })
+      }
+      var slot = rows[name][dayKey(new Date(ev.start))]
+      if (slot) slot.push(ev)
     })
+    var names = Object.keys(rows).sort()
+
+    var header = '<tr><th></th>' + days.map(function (d, i) {
+      return '<th' + (i === 0 ? ' class="today"' : '') + '>' +
+        esc(d.date.toLocaleDateString('en-US', { weekday: 'short' })) + ' ' +
+        d.date.getDate() + '</th>'
+    }).join('') + '</tr>'
+
+    var body = names.length
+      ? names.map(function (name) {
+          return '<tr><td class="wg-label">📅 ' + esc(name) + '</td>' +
+            days.map(function (d) {
+              var list = rows[name][d.key]
+              return '<td>' + (list.length
+                ? list.map(function (ev) {
+                    return '<a class="wk-ev cat-' + esc(eventCategory(ev)) + '" href="' +
+                      esc(eventHref(ev)) + '" target="_blank" rel="noopener">' +
+                      '<span class="wk-ev__t mono">' +
+                      esc(ev.allDay ? 'all day' : new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) +
+                      '</span>' + esc(ev.title) + '</a>'
+                  }).join('')
+                : '') + '</td>'
+            }).join('') + '</tr>'
+        }).join('')
+      : '<tr><td class="wg-label">—</td><td colspan="7" class="note">Nothing scheduled in the next 7 days.</td></tr>'
 
     return (
       '<div class="section-head"><h2>The week ahead</h2>' +
-      '<span class="sub">Seven days from today · ' + CAL_LOOKAHEAD_DAYS +
-      '-day horizon below</span></div>' +
-      '<div class="wk-grid">' +
-      days.map(function (d, i) {
-        return '<div class="wk-day' + (i === 0 ? ' wk-day--today' : '') + '">' +
-          '<div class="wk-day__head">' +
-          esc(d.date.toLocaleDateString('en-US', { weekday: 'short' })) +
-          '<span class="wk-day__num">' + d.date.getDate() + '</span></div>' +
-          (d.items.length
-            ? d.items.map(function (ev) {
-                return '<a class="wk-ev cat-' + esc(eventCategory(ev)) + '" href="' +
-                  esc(eventHref(ev)) + '" target="_blank" rel="noopener">' +
-                  '<span class="wk-ev__t mono">' +
-                  esc(ev.allDay ? 'all day' : new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) +
-                  '</span>' + esc(ev.title) + '</a>'
-              }).join('')
-            : '<div class="wk-day__empty">—</div>') +
-          '</div>'
-      }).join('') +
-      '</div>'
+      '<span class="sub">Seven days from today, one row per calendar · ' +
+      CAL_LOOKAHEAD_DAYS + '-day horizon below</span></div>' +
+      '<div class="week-grid-wrap"><table class="week-grid wk-table no-check">' +
+      '<thead>' + header + '</thead><tbody>' + body + '</tbody></table></div>'
     )
   }
 
@@ -2015,6 +2089,7 @@
 
   var STATUS_FILTERS = [
     ['', 'Any status'],
+    ['done', '✅ Completed'],
     ['waiting', '⏳ Waiting on reply'],
     ['court', '➡️ In their court'],
     ['fwd', '📤 Forwarded'],
@@ -2023,6 +2098,7 @@
   ]
   var STATUS_SET_OPTS = [
     ['court', '➡️ In my court'],
+    ['done', '✅ Completed'],
     ['waiting', '⏳ Waiting on reply'],
     ['fwd', '📤 Forwarded'],
     ['remind', '⏰ Reminder set'],
@@ -2035,6 +2111,60 @@
 
   var monitorPanel = null
   var threadCache = {}
+  /** Selected category filter; '' means all. Driven by the icon tiles. */
+  var catFilter = ''
+
+  /**
+   * Category as clickable icon tiles rather than a dropdown. The set is small
+   * and fixed, and each one carries a colour already — so showing them all at
+   * once, with counts, turns "filter by category" into one click and doubles
+   * as a read on where the work actually is.
+   */
+  function buildCategoryTiles(bridge) {
+    var host = monitorPanel.querySelector('.mon-cats')
+    if (!host) return
+    host.innerHTML =
+      '<button type="button" class="cat-tile cat-tile--all" data-cat="">' +
+      '<span class="cat-tile__icon">🗂️</span><span class="cat-tile__name">All</span>' +
+      '<span class="cat-tile__n mono"></span></button>' +
+      CATEGORY_OPTS.map(function (pair) {
+        var meta = CATEGORY_META[pair[0]] || { icon: '📧', label: pair[1] }
+        return '<button type="button" class="cat-tile cat-' + esc(pair[0]) +
+          '" data-cat="' + esc(pair[0]) + '">' +
+          '<span class="cat-tile__icon">' + meta.icon + '</span>' +
+          '<span class="cat-tile__name">' + esc(meta.label) + '</span>' +
+          '<span class="cat-tile__n mono"></span></button>'
+      }).join('')
+    host.addEventListener('click', function (e) {
+      var tile = e.target.closest('.cat-tile')
+      if (!tile) return
+      // Clicking the selected one clears it, so the tiles are a toggle.
+      catFilter = tile.dataset.cat === catFilter ? '' : tile.dataset.cat
+      paintCategoryTiles()
+      renderMonitor(bridge)
+    })
+    paintCategoryTiles()
+  }
+
+  function paintCategoryTiles() {
+    if (!monitorPanel) return
+    var counts = {}
+    var all = 0
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done) return
+        all++
+        counts[e.category] = (counts[e.category] || 0) + 1
+      })
+    } catch (err) {}
+    Array.prototype.forEach.call(monitorPanel.querySelectorAll('.cat-tile'), function (tile) {
+      var c = tile.dataset.cat
+      tile.classList.toggle('is-on', c === catFilter)
+      var n = tile.querySelector('.cat-tile__n')
+      if (n) n.textContent = c ? (counts[c] || 0) : all
+    })
+  }
 
   /**
    * Register a sixth tab on the page's own tab machinery. The page wires its
@@ -2059,13 +2189,13 @@
       '<div class="mon-filters">' +
       '<input class="own-in mon-q" placeholder="Search titles…">' +
       '<select class="own-in own-in--sel mon-status">' + optionsHtml(STATUS_FILTERS, '') + '</select>' +
-      '<select class="own-in own-in--sel mon-cat"><option value="">Any category</option>' +
-      optionsHtml(CATEGORY_OPTS, '_none_') + '</select>' +
+
       '<select class="own-in own-in--sel mon-sev"><option value="">Any severity</option>' +
       optionsHtml(SEVERITY_OPTS, '_none_') + '</select>' +
       '<select class="own-in own-in--sel mon-done">' + optionsHtml(DONE_FILTERS, 'open') + '</select>' +
       '<button type="button" class="live-btn mon-clear">Clear</button>' +
       '</div>' +
+      '<div class="mon-cats"></div>' +
       '<div class="mon-count"></div>' +
       '<div class="mon-results"></div>'
 
@@ -2073,7 +2203,9 @@
     var form = document.getElementById('own-form')
     punch.insertBefore(monitorPanel, form || root)
 
-    ;['.mon-q', '.mon-status', '.mon-cat', '.mon-sev', '.mon-done'].forEach(function (sel) {
+    buildCategoryTiles(bridge)
+
+    ;['.mon-q', '.mon-status', '.mon-sev', '.mon-done'].forEach(function (sel) {
       var node = monitorPanel.querySelector(sel)
       node.addEventListener(sel === '.mon-q' ? 'input' : 'change', function () {
         renderMonitor(bridge)
@@ -2082,7 +2214,8 @@
     monitorPanel.querySelector('.mon-clear').addEventListener('click', function () {
       monitorPanel.querySelector('.mon-q').value = ''
       monitorPanel.querySelector('.mon-status').value = ''
-      monitorPanel.querySelector('.mon-cat').value = ''
+      catFilter = ''
+      paintCategoryTiles()
       monitorPanel.querySelector('.mon-sev').value = ''
       monitorPanel.querySelector('.mon-done').value = 'open'
       renderMonitor(bridge)
@@ -2129,6 +2262,11 @@
 
   function setItemStatus(bridge, id, value) {
     try {
+      // "Completed" is not a forward status — it is the done flag. Routing it
+      // through setDone keeps one source of truth for completion, so an item
+      // marked complete here also disappears from its band and stops counting.
+      if (value === 'done') { setDone(bridge, id, true); return }
+      if (isClosed(id)) setDone(bridge, id, false)
       if (!STATE.status) STATE.status = {}
       if (value) STATE.status[id] = value
       else delete STATE.status[id]
@@ -2171,6 +2309,7 @@
    * the "waiting on someone" filters meaningful.
    */
   function statusOf(id) {
+    if (isClosed(id)) return 'done'
     return rawStatus(id) || DEFAULT_STATUS
   }
 
@@ -2211,7 +2350,7 @@
     var f = {
       q: monitorPanel.querySelector('.mon-q').value.trim().toLowerCase(),
       status: monitorPanel.querySelector('.mon-status').value,
-      cat: monitorPanel.querySelector('.mon-cat').value,
+      cat: catFilter,
       sev: monitorPanel.querySelector('.mon-sev').value,
       done: monitorPanel.querySelector('.mon-done').value,
     }
@@ -2231,6 +2370,7 @@
       return d !== 0 ? d : String(b[1].addedAt || '').localeCompare(String(a[1].addedAt || ''))
     })
 
+    paintCategoryTiles()
     var countEl = monitorPanel.querySelector('.mon-count')
     countEl.textContent =
       entries.length + (entries.length === 1 ? ' item' : ' items') + ' match'
@@ -2477,11 +2617,10 @@
         var newMail = diffNew(mailIds, seen.mail)
         var newEvents = diffNew(eventIds, seen.events)
 
-        renderMail(mailItems, mail.mock, newMail)
+        renderDaily(mailItems, mail.mock, newMail)
         renderEvents(eventItems, events.mock, newEvents)
         rewirePage()
         lastData = { events: eventItems, mail: mailItems }
-        renderDaily(mailItems, mail.mock)
         renderCalendar(eventItems)
         renderMonitor(bridge)
         renderStats(eventItems, mailItems)

@@ -78,7 +78,9 @@ Calendar client built on the same OAuth layer. It adds:
 - a **Live calendar** section at the top of Calendar — the next 14 days across
   every calendar you have switched on, linked by the API's `htmlLink`.
 
-Every checkable row also carries a **✓ close** control. The page's own contract
+Every category row and card carries a **✓ close** control — not only the linked
+ones `injectCheckables` adopts, because "not applicable" applies to anything on
+screen; unlinked rows get an id derived from their own text. The page's own contract
 is that checking a box *queues* an item and completion happens on the punch
 list — right for triage, but it means a row you have already dealt with returns
 on every sweep. ✓ completes it in place, recorded as a done punch-list entry so
