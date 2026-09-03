@@ -770,6 +770,111 @@ a.mailrow__main--link:hover .mailrow__subject {
   align-self: flex-start;
 }
 
+/* ---------- Global category filter bar ---------- */
+.catbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.catbar--waiting {
+  opacity: 0.55;
+}
+.catchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+.catchip:hover {
+  transform: translateY(-1px);
+  color: var(--text);
+}
+.catchip__icon {
+  font-size: 14px;
+  line-height: 1;
+  /* Unselected chips read as available rather than active. */
+  filter: grayscale(1);
+  opacity: 0.7;
+}
+.catchip__n {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.catchip.is-on {
+  color: var(--text);
+  background: var(--bg-elev);
+  border-color: var(--accent);
+}
+.catchip.is-on .catchip__icon {
+  filter: none;
+  opacity: 1;
+}
+.catchip--all.is-on {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.catchip.cat-critical { border-bottom-color: #f87171; }
+.catchip.cat-personal { border-bottom-color: #a78bfa; }
+.catchip.cat-kids { border-bottom-color: #f472b6; }
+.catchip.cat-health { border-bottom-color: #6ee7a8; }
+.catchip.cat-finance { border-bottom-color: #e0a33e; }
+.catchip.cat-home { border-bottom-color: #2dd4bf; }
+.catchip.cat-lifestyle { border-bottom-color: #60a5fa; }
+
+/* ---------- Actions menu ---------- */
+.menu {
+  position: relative;
+}
+.menu__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 50;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev-2);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.7);
+}
+.menu__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.menu__item:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.menu__sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+
 /* ---------- Header service indicators ---------- */
 .authbar--services {
   display: inline-flex;

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { installBriefingBridge } from '../lib/briefingBridge'
 
 /**
@@ -42,12 +42,13 @@ function ensureIntegration(doc: Document, base: string): void {
   }
 }
 
-export function WeeklyBriefing() {
+export function WeeklyBriefing({ reloadSignal = 0 }: { reloadSignal?: number }) {
   const base = import.meta.env.BASE_URL
   const src = `${base}weekly-briefing.html`
   // Changing the key remounts the iframe, which is a clean reload that also
-  // works cross-document without touching contentWindow.
-  const [reloadKey, setReloadKey] = useState(0)
+  // works cross-document without touching contentWindow. The Actions menu
+  // owns the control; this only reacts to it.
+  const reloadKey = reloadSignal
 
   const onLoad = useCallback(
     (e: React.SyntheticEvent<HTMLIFrameElement>) => {
@@ -61,28 +62,6 @@ export function WeeklyBriefing() {
 
   return (
     <div className="briefing">
-      <div className="briefing__bar">
-        <span className="briefing__label">Daily Digest</span>
-        <span className="briefing__hint">
-          Your punch list saves in this browser.
-        </span>
-        <button
-          className="btn btn--sm"
-          onClick={() => setReloadKey((k) => k + 1)}
-          title="Reload the digest"
-        >
-          Reload
-        </button>
-        <a
-          className="btn btn--sm"
-          href={src}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open the digest in its own tab"
-        >
-          Open full page ↗
-        </a>
-      </div>
       <iframe
         key={reloadKey}
         className="briefing__frame"

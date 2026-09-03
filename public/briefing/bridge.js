@@ -653,6 +653,14 @@
     '.cal-pick{font:inherit;text-align:left;cursor:pointer;transition:transform .08s ease}',
     '.cal-pick:hover{transform:translateY(-1px)}',
     '.cal-pick.is-on{border-color:var(--accent);background:var(--surface-2)}',
+    '.cal-nav{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}',
+    '.cal-nav__btn{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;',
+    'border-radius:10px;border:1px solid var(--line);background:var(--surface);',
+    'color:var(--ink);cursor:pointer}',
+    '.cal-nav__btn:hover{border-color:var(--accent)}',
+    '.cal-nav__btn.is-on{background:var(--accent);border-color:var(--accent);',
+    'color:var(--accent-ink)}',
+    '.is-filtered{display:none !important}',
 
     // Drive time is the one number on a logistics row you actually act on.
     '.logi-drive{display:flex;align-items:baseline;gap:5px;flex-shrink:0;',
@@ -746,6 +754,10 @@
   function retitle() {
     var eyebrow = document.querySelector('.masthead .eyebrow')
     if (eyebrow) eyebrow.textContent = 'Daily digest · AK'
+    // The sweep's date range is a rebuild artefact, not something the reader
+    // acts on — and it contradicts a page that refreshes hourly.
+    var h1 = document.querySelector('.masthead h1')
+    if (h1) h1.style.display = 'none'
     if (/weekly briefing/i.test(document.title)) document.title = 'AK Daily Digest'
   }
 
@@ -790,17 +802,9 @@
     customDays.title = 'Custom window, in days'
     customDays.setAttribute('aria-label', 'Custom window in days')
 
+    // No connect chips here: the app's top bar owns Google connection, and
+    // two sets of the same control was the duplication worth removing.
     strip.appendChild(el('span', 'live-label', 'Live data'))
-    SERVICES.forEach(function (svc) {
-      var chip = el('button', 'live-chip')
-      chip.type = 'button'
-      chip.dataset.service = svc.key
-      chip.appendChild(el('span', 'live-chip__icon', svc.icon))
-      chip.appendChild(el('span', 'live-chip__label', svc.label))
-      chip.appendChild(el('span', 'live-chip__state', ''))
-      chips[svc.key] = chip
-      strip.appendChild(chip)
-    })
     strip.appendChild(statusEl)
     strip.appendChild(el('span', 'live-sep', 'Actions from'))
     strip.appendChild(rangeSel)
@@ -1762,6 +1766,36 @@
       if (btn) btn.title = mine + ' open and in your court'
     } catch (e) {}
 
+    // Emails tab: the rows actually rendered on it.
+    var daily = document.getElementById('daily-tab-count')
+    if (daily) {
+      daily.textContent = document.querySelectorAll(
+        '#panel-daily .cat-row:not(.is-closed):not(.no-check)',
+      ).length
+    }
+
+    // Calendar: upcoming events inside the horizon, after the filter.
+    var calBtn = document.querySelector('.tab-btn[data-panel="calendar"] .count')
+    if (calBtn) {
+      var horizon = Date.now() + EVENT_DAYS * 86400000
+      calBtn.textContent = (lastData.events || []).filter(function (ev) {
+        var t = new Date(ev.start).getTime()
+        return isFinite(t) && t >= Date.now() && t <= horizon && eventPasses(ev)
+      }).length
+    }
+
+    // Drafts: the page's own, plus every one generated here.
+    var draftBtn = document.querySelector('.tab-btn[data-panel="drafts"] .count')
+    if (draftBtn) {
+      own.drafts = own.drafts || {}
+      var generated = Object.keys(own.drafts).filter(function (k) {
+        return (own.drafts[k] || []).length
+      }).length
+      var staticDrafts = document.querySelectorAll('#panel-drafts .draft-body').length
+      var mine = document.querySelectorAll('#gen-drafts .draft-body').length
+      draftBtn.textContent = Math.max(0, staticDrafts - mine) + generated
+    }
+
     var actions = document.getElementById('inbox-tab-count')
     if (actions) {
       var visible = 0
@@ -1769,6 +1803,7 @@
         document.querySelectorAll('#panel-actions .cat-row, #panel-actions .card'),
         function (row) {
           if (row.classList.contains('is-closed')) return
+          if (row.classList.contains('is-filtered')) return
           if (row.style.display === 'none') return
           // A hidden ANCESTOR SECTION still means hidden, but the panel
           // itself is display:none whenever another tab is open — so check
@@ -1780,6 +1815,210 @@
       )
       actions.textContent = visible
     }
+  }
+
+
+
+  // ---- automatic drafts ---------------------------------------------------
+
+  /**
+   * Draft replies for mail that has just arrived and looks like it wants one.
+   *
+   * Not everything does: a receipt, a newsletter or a promotion needs no
+   * reply, and drafting for them would spend an API call per message and bury
+   * the drafts that matter. So this is limited to inbound, unread, non-bulk
+   * mail, capped per sync — the rest stays available on demand via ✍️.
+   */
+  var AUTO_DRAFT_MAX = 3
+  var NO_REPLY_RE = /\b(no-?reply|do-?not-?reply|newsletter|unsubscribe|receipt|invoice|statement|shipped|delivered|verification code|otp|one-time)\b/i
+
+  function wantsReply(m) {
+    if (!m.unread) return false
+    if (m.category === 'promotions' || m.category === 'social') return false
+    if (NO_REPLY_RE.test(String(m.subject || '') + ' ' + String(m.from || ''))) return false
+    // Bulk mail is scored down by the dashboard's own heuristic; reuse it
+    // rather than inventing a second definition of "worth replying to".
+    return (m.reasons || []).indexOf('Bulk mail') === -1
+  }
+
+  function autoDraft(bridge, mailItems, newIds) {
+    if (!newIds || !newIds.length) return
+    own.drafts = own.drafts || {}
+    var queue = (mailItems || []).filter(function (m) {
+      if (newIds.indexOf(m.id) === -1) return false
+      if ((own.drafts[m.id] || []).length) return false   // already drafted
+      return wantsReply(m)
+    }).slice(0, AUTO_DRAFT_MAX)
+    if (!queue.length) return
+
+    setStatus('Drafting ' + queue.length + ' repl' + (queue.length === 1 ? 'y' : 'ies') + '…')
+    // Sequential: each draft reads its thread, and firing them together would
+    // burst the same Gmail rate limit the sync already works around.
+    var i = 0
+    function next() {
+      if (i >= queue.length) {
+        renderDrafts(bridge)
+        refreshTabCounts()
+        return
+      }
+      var m = queue[i++]
+      bridge
+        .draftReply({ id: m.id, subject: m.subject, from: m.from })
+        .then(function (res) {
+          if (res && res.text && !res.error) addDraft(m.id, m, res.text, res.mock)
+        })
+        .catch(function () {})
+        .then(next)
+    }
+    next()
+  }
+
+  // ---- global category filter --------------------------------------------
+
+  /**
+   * One filter across every tab, driven from the app's top bar. "Critical" is
+   * a severity rather than a category, but it belongs in the same control:
+   * from the reader's side both answer "show me only this slice", and keeping
+   * them apart would mean two filters that have to be reasoned about together.
+   */
+  var FILTER_KEY = 'ak-digest-filters'
+  var activeFilters = (function () {
+    try {
+      var raw = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null')
+      if (Array.isArray(raw)) return raw
+    } catch (e) {}
+    return []   // empty = everything
+  })()
+
+  function filtersOn() {
+    return activeFilters.length > 0
+  }
+
+  function matchesFilter(category, severity) {
+    if (!filtersOn()) return true
+    if (activeFilters.indexOf('critical') !== -1 && severity === 'critical') return true
+    return activeFilters.indexOf(category) !== -1
+  }
+
+  /** Punch-list entries the filter admits. */
+  function entryPasses(e) {
+    return matchesFilter(e.category, e.severity)
+  }
+
+  function eventPasses(ev) {
+    return matchesFilter(eventCategory(ev), '')
+  }
+
+  function mailPasses(m) {
+    return matchesFilter(inferMailCategory(m), mailSeverity(m.score))
+  }
+
+  function setFilters(next) {
+    activeFilters = Array.isArray(next) ? next.slice() : []
+    try {
+      localStorage.setItem(FILTER_KEY, JSON.stringify(activeFilters))
+    } catch (e) {}
+    redrawAll()
+  }
+
+  /** Re-render everything the filter touches, from the last synced payload. */
+  function redrawAll() {
+    var bridge = getBridge()
+    try {
+      renderDaily(lastData.mail, false, [])
+      renderCalendar(lastData.events)
+      if (bridge) renderMonitor(bridge)
+      renderStats(lastData.events, lastData.mail)
+      applyFilterToStaticRows()
+      refreshTabCounts()
+    } catch (e) {}
+  }
+
+  /**
+   * The sweep-written category rows are not ours to re-render, so they are
+   * shown or hidden in place. `data-cat` is the page's own category marker.
+   */
+  function applyFilterToStaticRows() {
+    var rows = document.querySelectorAll('main .cat-row, main .card')
+    Array.prototype.forEach.call(rows, function (row) {
+      if (row.classList.contains('mail-line')) return   // ours; already filtered
+      var cat = row.dataset.cat || ''
+      if (!cat && typeof inferCategory === 'function') {
+        var t = row.querySelector('.cat-title, .card-title')
+        try {
+          cat = inferCategory(row, t ? t.textContent : '')
+        } catch (e) {
+          cat = ''
+        }
+      }
+      var sev = 'low'
+      ;['critical', 'high', 'medium', 'low'].some(function (x) {
+        if (row.classList.contains('sev-' + x)) { sev = x; return true }
+        return false
+      })
+      row.classList.toggle('is-filtered', !matchesFilter(cat, sev))
+    })
+  }
+
+  /**
+   * The API the app's top bar drives. Same-origin, so the parent calls these
+   * directly rather than posting messages — one less protocol to keep in step.
+   */
+  function publishDigestApi() {
+    window.__nexusDigest = {
+      version: 1,
+      setFilters: setFilters,
+      getFilters: function () { return activeFilters.slice() },
+      categoryCounts: categoryCounts,
+      sync: function () {
+        var bridge = getBridge()
+        if (bridge) sync(bridge)
+      },
+      status: function () {
+        return {
+          lastSync: readStored(LAST_SYNC_KEY, ''),
+          counts: categoryCounts(),
+        }
+      },
+    }
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.dispatchEvent(new Event('nexus:digest-ready'))
+      }
+    } catch (e) {}
+  }
+
+  /**
+   * Per-category totals for the top bar's chips.
+   *
+   * Counts everything the filter governs — open punch-list items, mail in the
+   * current window, and upcoming events — not just the punch list. A chip
+   * reading 0 beside a screen full of that category's email is a number that
+   * contradicts what you are looking at.
+   */
+  function categoryCounts() {
+    var out = { all: 0, critical: 0 }
+    CATEGORY_OPTS.forEach(function (p) { out[p[0]] = 0 })
+    function add(cat, sev) {
+      out.all++
+      if (sev === 'critical') out.critical++
+      if (out[cat] !== undefined) out[cat]++
+    }
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (e && !e.done) add(e.category, e.severity)
+      })
+    } catch (e) {}
+    ;(lastData.mail || []).forEach(function (m) {
+      add(inferMailCategory(m), mailSeverity(m.score))
+    })
+    var horizon = Date.now() + EVENT_DAYS * 86400000
+    ;(lastData.events || []).forEach(function (ev) {
+      var t = new Date(ev.start).getTime()
+      if (isFinite(t) && t >= Date.now() && t <= horizon) add(eventCategory(ev), '')
+    })
+    return out
   }
 
   // ---- close an item where it appears -------------------------------------
@@ -1968,10 +2207,11 @@
     if (!dailyPanel) return
     var fresh = newIds || []
     var now = Date.now()
-    var since = (items || []).filter(function (m) {
+    var pool = (items || []).filter(mailPasses)
+    var since = pool.filter(function (m) {
       return previousVisit && new Date(m.date).getTime() > previousVisit
     })
-    var day = (items || []).filter(function (m) {
+    var day = pool.filter(function (m) {
       return new Date(m.date).getTime() >= now - 86400000
     })
     // Newest first: on an arrivals list, recency is the ordering that matters
@@ -2016,45 +2256,14 @@
    * Critical one due in a month, and that is exactly what a "what do I do
    * next" list has to say.
    */
-  function renderTopActions(bridge) {
-    var punch = document.getElementById('panel-punchlist')
-    if (!punch) return
-    var host = document.getElementById('top-actions-ranked')
-    if (!host) {
-      host = el('section', 'mon-section')
-      host.id = 'top-actions-ranked'
-      punch.insertBefore(host, punch.firstChild)
-    }
-
-    var ranked = []
-    try {
-      Object.keys(STATE.punchlist || {}).forEach(function (id) {
-        var e = STATE.punchlist[id]
-        if (!e || e.done) return
-        var d = deadlineFrom(e.title)
-        if (d) ranked.push({ id: id, e: e, d: d })
-      })
-    } catch (err) {}
-    ranked.sort(function (a, b) { return a.d.days - b.d.days })
-
-    var head = '<div class="section-head"><h2>⏱️ Top actions — ranked by deadline</h2>' +
-      '<span class="sub">Soonest first, from dates found in each item · severity is shown but does not reorder</span></div>'
-
-    if (!ranked.length) {
-      host.innerHTML = head +
-        '<p class="note">No dated items on the list. Any item whose text carries a date (“Sep 12”) is ranked here.</p>'
-      return
-    }
-
-    host.innerHTML = head + '<div class="rank-list">' + ranked.slice(0, 8).map(function (r, i) {
-      return '<div class="rank-row sev-' + esc(r.e.severity || 'low') + '">' +
-        '<span class="rank-n mono">' + (i + 1) + '</span>' +
-        '<span class="rank-days mono' + (r.d.days <= 3 ? ' rank-days--soon' : '') + '">' +
-        r.d.days + 'd</span>' +
-        '<span class="rank-title">' + esc(r.e.title) + '</span>' +
-        '<span class="rank-when mono">' + esc(r.d.label) + '</span>' +
-        '</div>'
-    }).join('') + '</div>'
+  /**
+   * Deadline ranking has been removed from Actions & Inbox: the punch list
+   * board already orders by severity and shows each item's deadline, so a
+   * second ranked list of the same items was one more place to keep in step.
+   */
+  function renderTopActions() {
+    var old = document.getElementById('top-actions-ranked')
+    if (old && old.parentNode) old.parentNode.removeChild(old)
   }
 
   // ---- Calendar tab -------------------------------------------------------
@@ -2214,7 +2423,7 @@
     var horizon = now + CAL_LOOKAHEAD_DAYS * 86400000
     var future = (events || []).filter(function (ev) {
       var t = new Date(ev.start).getTime()
-      return t >= now && t <= horizon
+      return t >= now && t <= horizon && eventPasses(ev)
     })
 
     var host = document.getElementById('cal-live')
@@ -2233,16 +2442,34 @@
       ? future.filter(function (ev) { return eventCategory(ev) === calCatFilter })
       : future
 
-    host.innerHTML =
-      calSelectorHtml(future) +
-      keyDatesHtml(events) +
-      hoursDashboardHtml(picked) +
-      weekAheadHtml(picked)
+    var body
+    if (calSection === 'deadlines') body = keyDatesHtml(events) + deadlinesHtml(picked)
+    else if (calSection === 'meetings') body = meetingsHtml(picked)
+    else if (calSection === 'load') body = loadHtml(picked)
+    else body = '<div class="section-head"><h2>🚗 Logistics</h2>' +
+      '<span class="sub">Where you need to be, still ahead · drive times pulled out</span></div>' +
+      '<div id="logi-slot"></div>'
+
+    host.innerHTML = calNavHtml() + body
+
+    // Logistics is sweep-written markup living elsewhere on the page; move it
+    // into the section rather than duplicating it.
+    var logiSlot = document.getElementById('logi-slot')
+    var logiWrap = document.querySelector('.logi-wrap')
+    if (logiSlot && logiWrap) logiSlot.appendChild(logiWrap)
+    var logiSection = logiWrap && logiWrap.closest('section')
+    if (logiSection && logiSection !== host) logiSection.style.display = 'none'
     trimLogistics()
 
     if (!host.dataset.picker) {
       host.dataset.picker = '1'
       host.addEventListener('click', function (e) {
+        var nav = e.target.closest('.cal-nav__btn')
+        if (nav) {
+          calSection = nav.dataset.calSec
+          renderCalendar(lastData.events)
+          return
+        }
         var pick = e.target.closest('.cal-pick')
         if (!pick) return
         var next = pick.dataset.calCat
@@ -2557,6 +2784,101 @@
       '</div>'
   }
 
+
+  /**
+   * Rename the sweep's tabs to what they now hold, and give Calendar its four
+   * named sections. The generated page still calls them Actions & Inbox and
+   * Reference vault; a rebuild would restore those names, so this runs here.
+   */
+  function retabs() {
+    var map = {
+      punchlist: '📋 Punch List',
+      daily: '✉️ Emails & Suggested Tasks',
+      calendar: '📅 Calendar',
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (btn) {
+      var name = map[btn.dataset.panel]
+      if (!name) return
+      var count = btn.querySelector('.count')
+      btn.textContent = name + ' '
+      if (count) btn.appendChild(count)
+    })
+
+    // Actions & Inbox held the sweep's category bands; mail lives on its own
+    // tab now, so it is the sweep's reference material rather than a queue.
+    var actions = document.querySelector('.tab-btn[data-panel="actions"]')
+    if (actions) {
+      var c = actions.querySelector('.count')
+      actions.textContent = '🗂️ Inbox & tasks by category '
+      if (c) actions.appendChild(c)
+    }
+  }
+
+  /** Section navigation within the Calendar tab. */
+  var CAL_SECTIONS = [
+    { key: 'deadlines', label: '⏱️ Deadlines' },
+    { key: 'meetings', label: '🤝 Meetings' },
+    { key: 'logistics', label: '🚗 Logistics' },
+    { key: 'load', label: '⚖️ Load balancing' },
+  ]
+  var calSection = 'deadlines'
+
+  function calNavHtml() {
+    return '<div class="cal-nav">' + CAL_SECTIONS.map(function (sec) {
+      return '<button type="button" class="cal-nav__btn' +
+        (sec.key === calSection ? ' is-on' : '') + '" data-cal-sec="' +
+        sec.key + '">' + sec.label + '</button>'
+    }).join('') + '</div>'
+  }
+
+  /**
+   * Deadlines: dated items and key dates, soonest first — everything with a
+   * clock on it, in one place.
+   */
+  function deadlinesHtml(events) {
+    var rows = []
+    ;(events || []).forEach(function (ev) {
+      var t = new Date(ev.start).getTime()
+      if (!isFinite(t) || t < Date.now()) return
+      rows.push({ when: t, title: ev.title, kind: 'event', href: eventHref(ev),
+        meta: (ev.calendar || 'Calendar') })
+    })
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done || !entryPasses(e)) return
+        var d = deadlineFrom(e.title)
+        if (!d) return
+        rows.push({ when: Date.now() + d.days * 86400000, title: e.title,
+          kind: 'task', href: (e.links && e.links[0] && e.links[0].href) || '',
+          meta: 'punch list · ' + (e.severity || 'low') })
+      })
+    } catch (e) {}
+    rows.sort(function (a, b) { return a.when - b.when })
+
+    if (!rows.length) return '<p class="note">Nothing dated ahead.</p>'
+    return '<div class="rank-list">' + rows.slice(0, 20).map(function (r, i) {
+      var days = Math.max(0, Math.round((r.when - Date.now()) / 86400000))
+      return '<div class="rank-row">' +
+        '<span class="rank-n mono">' + (i + 1) + '</span>' +
+        '<span class="rank-days mono' + (days <= 3 ? ' rank-days--soon' : '') + '">' +
+        (days === 0 ? 'today' : days + 'd') + '</span>' +
+        '<span class="rank-title">' +
+        (r.href ? '<a class="mail-link" href="' + esc(r.href) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>' : esc(r.title)) +
+        '</span><span class="rank-when mono">' + esc(r.meta) + '</span></div>'
+    }).join('') + '</div>'
+  }
+
+  /** Meetings: the week grid, plus the prep blocks that feed it. */
+  function meetingsHtml(future) {
+    return weekAheadHtml(future)
+  }
+
+  /** Load balancing: where the hours actually go. */
+  function loadHtml(future) {
+    return calSelectorHtml(future) + hoursDashboardHtml(future)
+  }
+
   // ---- Monitor tab: filters, thread timelines, history --------------------
 
   var STATUS_FILTERS = [
@@ -2835,7 +3157,7 @@
     try {
       Object.keys(STATE.punchlist || {}).forEach(function (id) {
         var entry = STATE.punchlist[id]
-        if (entry && matches(id, entry, f)) entries.push([id, entry])
+        if (entry && entryPasses(entry) && matches(id, entry, f)) entries.push([id, entry])
       })
     } catch (e) {}
 
@@ -3098,6 +3420,7 @@
 
         indexMail(mailItems)
         var reopened = reopenOnReply(bridge, mailItems)
+        autoDraft(bridge, mailItems, newMail)
 
         renderDaily(mailItems, mail.mock, newMail)
         rewirePage()
@@ -3212,37 +3535,21 @@
       return
     }
 
-    SERVICES.forEach(function (svc) {
-      chips[svc.key].addEventListener('click', function () {
-        setStatus('Opening Google sign-in for ' + svc.label + '…')
-        chips[svc.key].disabled = true
-        // The click's user activation reaches the same-origin parent, so the
-        // consent popup opens there rather than being blocked in this frame.
-        // Ask only for this service: the other may already be granted, and a
-        // partial grant should be repairable one service at a time. Retrying
-        // one that already failed forces the consent screen open — otherwise
-        // Google replays the existing partial grant with no UI and the click
-        // appears to do nothing.
-        var kind = errorKind(svcErrors[svc.key])
-        if (kind === 'config') {
-          // Nothing to authorize — re-check instead of reopening consent.
-          setStatus('Re-checking ' + svc.label + '…')
-          chips[svc.key].disabled = false
-          sync(bridge)
-          return
-        }
-        bridge.connect(svc.key, kind === 'scope').then(function (next) {
-          svcErrors[svc.key] = null
-          renderChips(next)
-          if (next.error) {
-            setStatus(next.error, 'warn')
-            return
-          }
+    // Connecting Google is the app top bar's job now; this frame only reports
+    // what the connection is doing. But it has to LEARN when that happens:
+    // moving the control out of here removed the click that used to trigger
+    // the first sync, so listen for the grant the app broadcasts instead.
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.addEventListener('nexus:google-token', function () {
+          renderChips(bridge.status())
           startAutoSync(bridge)
           sync(bridge)
         })
-      })
-    })
+      }
+    } catch (e) {
+      /* standalone page — nothing to listen to */
+    }
 
     syncBtn.addEventListener('click', function () {
       sync(bridge)
@@ -3292,12 +3599,16 @@
     })
 
     buildDailyTab(bridge)
+    // After the 24/7 tab exists — renaming a button that has not been built
+    // yet silently does nothing.
+    retabs()
     buildOwnForm(bridge)
     buildMonitorTab(bridge)
     applyOwnItems()
     renderMonitor(bridge)
     renderSyncStamp([], [])
     renderStats([], [])
+    publishDigestApi()
     wirePrepBlocks()
     renderCalendar([])
     renderDrafts(bridge)

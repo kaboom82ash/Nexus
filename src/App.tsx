@@ -14,6 +14,8 @@ import { TabBar } from './components/TabBar'
 import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
 import { GoogleAuthBar } from './components/GoogleAuthBar'
+import { CategoryBar } from './components/CategoryBar'
+import { ActionsMenu } from './components/ActionsMenu'
 import { GlobalSettings } from './components/GlobalSettings'
 import { WeeklyBriefing } from './components/WeeklyBriefing'
 
@@ -21,6 +23,8 @@ export default function App() {
   const [state, setState] = useState<DashboardState>(() => loadState())
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
   const [showGlobalSettings, setShowGlobalSettings] = useState(false)
+  // Bumped by the Actions menu to remount the digest iframe.
+  const [digestReload, setDigestReload] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -172,16 +176,12 @@ export default function App() {
               {filledCount}/{activeTab.tiles.length} tiles
             </span>
           )}
-          <button className="btn btn--sm" onClick={doExport} title="Export dashboard">
-            Export
-          </button>
-          <button
-            className="btn btn--sm"
-            onClick={() => fileInputRef.current?.click()}
-            title="Import dashboard"
-          >
-            Import
-          </button>
+          <ActionsMenu
+            onExport={doExport}
+            onImport={() => fileInputRef.current?.click()}
+            onReload={() => setDigestReload((n) => n + 1)}
+            onSettings={() => setShowGlobalSettings(true)}
+          />
           <input
             ref={fileInputRef}
             type="file"
@@ -189,19 +189,15 @@ export default function App() {
             hidden
             onChange={onImportFile}
           />
-          <button
-            className="btn btn--sm"
-            onClick={() => setShowGlobalSettings(true)}
-            title="Global settings"
-          >
-            ⚙
-          </button>
         </div>
       </header>
 
+      {/* One filter for the whole digest, above everything it governs. */}
+      {onHome && <CategoryBar />}
+
       <main className={`app__main ${onHome ? 'app__main--home' : ''}`}>
         {onHome || !activeTab ? (
-          <WeeklyBriefing />
+          <WeeklyBriefing reloadSignal={digestReload} />
         ) : (
           <DashboardGrid
             tab={activeTab}
