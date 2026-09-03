@@ -11,6 +11,8 @@
  */
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
+/** Public alias — other modules compose scope sets from this. */
+export const GMAIL_READONLY_SCOPE = GMAIL_SCOPE
 const CLIENT_ID_KEY = 'nexus.google.clientId'
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 
@@ -73,6 +75,12 @@ interface TokenResponse {
   access_token?: string
   expires_in?: number
   error?: string
+  /**
+   * Space-separated scopes Google ACTUALLY granted. The consent screen has a
+   * checkbox per scope, so this can be a subset of what was asked for — and
+   * assuming otherwise is how a partial grant turns into a sign-in loop.
+   */
+  scope?: string
 }
 interface TokenError {
   type?: string
@@ -193,6 +201,46 @@ function validScopeToken(scope: string): string | null {
   return null
 }
 
+/**
+ * Whether Google granted this scope, regardless of how the expiry maths comes
+ * out. Grant and freshness are different questions, and conflating them is a
+ * sign-in loop: `validScopeToken` subtracts a 60s safety margin from an expiry
+ * derived from the device clock, so a token Google JUST issued reads as
+ * ungranted whenever that clock runs fast (or `expires_in` comes back short).
+ * The caller then reports "access was not granted", the user signs in again,
+ * Google grants again, it still reads ungranted — forever, with nothing on
+ * screen to explain it. Verify grants with this; use validScopeToken only to
+ * decide whether a cached token is still usable.
+ */
+function hasScopeGrant(scope: string): boolean {
+  return !!tokens[scope]
+}
+
+/**
+ * Interactive sign-in circuit breaker. Whatever else goes wrong, the app must
+ * never be able to reopen Google's consent screen without end: past this many
+ * prompts for one scope inside the window, refuse and say so.
+ */
+const MAX_PROMPTS = 3
+const PROMPT_WINDOW_MS = 60_000
+const promptLog: Record<string, number[]> = {}
+
+function tooManyPrompts(scope: string): boolean {
+  const now = Date.now()
+  const recent = (promptLog[scope] ?? []).filter((t) => now - t < PROMPT_WINDOW_MS)
+  promptLog[scope] = recent
+  return recent.length >= MAX_PROMPTS
+}
+
+function notePrompt(scope: string): void {
+  promptLog[scope] = (promptLog[scope] ?? []).concat(Date.now())
+}
+
+/** Called once a sign-in genuinely works, so a later retry starts fresh. */
+function clearPromptLog(scope: string): void {
+  delete promptLog[scope]
+}
+
 function clearAllScopeTokens(): void {
   tokens = {}
   persistTokens()
@@ -224,6 +272,7 @@ async function requestToken(
   scope: string,
   interactive: boolean,
   force = false,
+  forceConsent = false,
 ): Promise<string> {
   // A valid cached token satisfies everyone, silent or interactive.
   if (!force) {
@@ -232,10 +281,16 @@ async function requestToken(
   }
 
   if (interactive) {
+    if (tooManyPrompts(scope)) {
+      throw new Error(
+        'Google sign-in was opened several times without succeeding — something other than consent is failing. Check the browser console, and that this site is in the OAuth client\u2019s Authorized JavaScript origins.',
+      )
+    }
     // Coalesce concurrent interactive requests into a single popup.
     const pending = interactiveInflight[scope]
     if (pending) return pending
-    const p = acquireToken(scope, true)
+    notePrompt(scope)
+    const p = acquireToken(scope, true, forceConsent)
     interactiveInflight[scope] = p
     // Clear on settle without creating an unhandled rejection.
     const clear = () => {
@@ -261,7 +316,11 @@ async function requestToken(
   return p
 }
 
-async function acquireToken(scope: string, interactive: boolean): Promise<string> {
+async function acquireToken(
+  scope: string,
+  interactive: boolean,
+  forceConsent = false,
+): Promise<string> {
   const clientId = getClientId()
   if (!clientId) throw new Error('No Google Client ID configured')
 
@@ -285,7 +344,30 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
         }
         const token = resp.access_token
         const ttl = (resp.expires_in ?? 3600) * 1000
-        setScopeToken(scope, { token, expiresAt: Date.now() + ttl })
+        const expiresAt = Date.now() + ttl
+
+        // Cache against what was GRANTED, never what was requested. Caching a
+        // refused scope marks it authorized, its API then 403s, and the retry
+        // is served from that same bogus cache entry without ever reaching
+        // Google — a connect button that flickers "connected" and fails, for
+        // as long as the user keeps pressing it.
+        const asked = scope.split(' ').filter(Boolean)
+        const granted = (resp.scope ?? scope).split(' ').filter(Boolean)
+        for (const g of granted) setScopeToken(g, { token, expiresAt })
+        for (const a of asked) {
+          if (!granted.includes(a)) setScopeToken(a, null)
+        }
+        // The exact request key is only a valid cache entry if everything it
+        // asked for came back; otherwise a repeat request must reach Google.
+        if (asked.length > 1 && asked.every((a) => granted.includes(a))) {
+          setScopeToken(scope, { token, expiresAt })
+        }
+        // A grant that landed means the user is not stuck; let them retry
+        // freely later without the breaker holding a stale count.
+        if (granted.length) {
+          clearPromptLog(scope)
+          for (const g of granted) clearPromptLog(g)
+        }
         // Broadcast ONLY on an interactive sign-in so all widgets refresh once
         // after login. Silent/background refreshes must NOT broadcast, or they
         // can re-trigger loads in a loop.
@@ -310,7 +392,12 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
       timeoutMs,
     )
     try {
-      client.requestAccessToken({ prompt: interactive ? '' : 'none' })
+      // 'consent' re-opens the checkbox screen. Without it Google replays an
+      // existing partial grant with no UI, so a user retrying a refused scope
+      // is never actually asked for it again.
+      client.requestAccessToken({
+        prompt: interactive ? (forceConsent ? 'consent' : '') : 'none',
+      })
     } catch (e) {
       finish(() => reject(e instanceof Error ? e : new Error('Authorization failed')))
     }
@@ -320,6 +407,108 @@ async function acquireToken(scope: string, interactive: boolean): Promise<string
 /** Read-only Gmail access token (inbox reading widgets). */
 function getAccessToken(interactive: boolean): Promise<string> {
   return requestToken(GMAIL_SCOPE, interactive)
+}
+
+/**
+ * Access token for any Google scope, using the same client id, GIS loader,
+ * token cache and request de-duplication as Gmail. Other Google clients in
+ * this app (see `lib/calendar.ts`) build on this rather than standing up a
+ * second OAuth layer, so one sign-in serves every scope the user has granted.
+ */
+export function requestScopeToken(
+  scope: string,
+  interactive: boolean,
+): Promise<string> {
+  return requestToken(scope, interactive)
+}
+
+/**
+ * Request ONE token covering several scopes, then cache it under each scope
+ * individually. Google issues a single token for a space-separated scope
+ * string, so this is one consent popup instead of one per scope — and because
+ * the result is mirrored into each per-scope cache slot, code that only knows
+ * about `gmail.readonly` (the widgets, the auth bar) sees itself as connected
+ * straight away.
+ */
+export async function requestScopes(
+  scopes: string[],
+  interactive: boolean,
+  /** Re-open Google's checkbox screen instead of replaying an existing grant. */
+  forceConsent = false,
+): Promise<string> {
+  const unique = Array.from(new Set(scopes.filter(Boolean)))
+  if (unique.length === 0) throw new Error('No scopes requested')
+  if (unique.length === 1) {
+    const only = await requestToken(unique[0], interactive, false, forceConsent)
+    if (!hasScopeGrant(unique[0])) {
+      throw new Error(
+        `access was not granted for ${scopeLabel(unique[0])} — reconnect and leave the permission ticked`,
+      )
+    }
+    announceGrant(unique, interactive)
+    startKeepAlive()
+    return only
+  }
+
+  // Already covered individually? Then there is nothing to ask for.
+  const cached = unique.map((s) => validScopeToken(s))
+  if (cached.every((t) => t !== null)) return cached[0] as string
+
+  const combined = unique.join(' ')
+  // acquireToken files the result against the granted scopes; all this needs
+  // to do is check what actually landed.
+  const token = await requestToken(combined, interactive, false, forceConsent)
+
+  const missing = unique.filter((s) => !hasScopeGrant(s))
+  if (missing.length) {
+    throw new Error(
+      `access was not granted for ${missing
+        .map(scopeLabel)
+        .join(' and ')} — reconnect and leave every permission ticked`,
+    )
+  }
+
+  announceGrant(unique, interactive)
+  startKeepAlive()
+  return token
+}
+
+/** Human name for a scope, for messages a person has to act on. */
+function scopeLabel(scope: string): string {
+  if (scope === GMAIL_SCOPE) return 'Gmail'
+  if (scope === GMAIL_SEND_SCOPE) return 'Gmail send'
+  if (scope.includes('calendar')) return 'Calendar'
+  return scope
+}
+
+function announceGrant(unique: string[], interactive: boolean): void {
+  if (!interactive || typeof window === 'undefined') return
+  {
+    // The per-scope broadcast in acquireToken only fires for a bare
+    // gmail.readonly request, so announce this one ourselves.
+    if (unique.includes(GMAIL_SCOPE)) {
+      window.dispatchEvent(new Event('nexus:gmail-token'))
+    }
+    // Fires for ANY scope, so indicators for non-Gmail services update too.
+    window.dispatchEvent(new Event('nexus:google-token'))
+  }
+}
+
+/**
+ * Whether `scope` has been granted. This drives what the UI SHOWS, so it asks
+ * about the grant, not about freshness: a chip that reads "Connect" while the
+ * scope is in fact held invites a sign-in that changes nothing, and that is a
+ * loop the user drives by hand — click, grant, still says Connect, click.
+ * Staleness is handled where it belongs, in requestToken, which refreshes a
+ * cached token when it is actually used.
+ */
+export function isScopeAuthorized(scope: string): boolean {
+  return hasScopeGrant(scope)
+}
+
+/** Drop a cached token — used when the API answers 401 for that scope. */
+export function clearScopeToken(scope: string): void {
+  setScopeToken(scope, null)
 }
 
 export function isConnected(): boolean {
@@ -582,6 +771,8 @@ export function gmailWebUrl(messageId: string): string {
 
 /** How many recent messages we score before taking the top N. */
 const SCORE_CANDIDATE_CAP = 40
+/** Ceiling on the scoring pool — one metadata request each, so this is latency. */
+const SCORE_CANDIDATE_MAX = 120
 
 const TRANSACTIONAL =
   /\b(order|ordered|receipt|payment|paid|invoice|statement|refund|shipped|delivery|delivered|confirmation|confirmed|venmo|paypal|klarna|zelle|deposit|transfer|bank|billing|charged)\b/i
@@ -697,6 +888,63 @@ async function listMessageIds(
   return ids.slice(0, cap)
 }
 
+/**
+ * Gmail enforces a per-user rate limit (250 quota units/second), and one
+ * metadata read is 5 units. Firing a whole candidate pool at once trips it and
+ * comes back 429 — so requests go out a few at a time, and a 429 or a 5xx is
+ * retried with exponential backoff plus jitter rather than surfaced.
+ *
+ * Retry-After is honoured when Google sends it; the jitter matters because a
+ * batch that all backs off on the same schedule just collides again.
+ */
+const REQUEST_CONCURRENCY = 5
+const MAX_RETRIES = 4
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+async function fetchRetrying(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let wait = 400
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init)
+    const retryable = res.status === 429 || (res.status >= 500 && res.status < 600)
+    if (!retryable || attempt >= MAX_RETRIES) return res
+
+    const header = Number(res.headers.get('retry-after'))
+    const delay = Number.isFinite(header) && header > 0
+      ? header * 1000
+      : wait + Math.random() * wait
+    await sleep(delay)
+    wait *= 2
+  }
+}
+
+/** Run `fn` over `items` a few at a time, preserving input order. */
+async function mapLimited<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      for (;;) {
+        const i = next++
+        if (i >= items.length) return
+        out[i] = await fn(items[i])
+      }
+    },
+  )
+  await Promise.all(workers)
+  return out
+}
+
 async function getMessageMeta(
   token: string,
   id: string,
@@ -708,12 +956,17 @@ async function getMessageMeta(
   for (const h of ['From', 'Subject', 'Date', 'List-Unsubscribe']) {
     url.searchParams.append('metadataHeaders', h)
   }
-  const res = await fetch(url.toString(), {
+  const res = await fetchRetrying(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
   })
   if (res.status === 401) {
     setCachedToken(null)
     throw new Error('Gmail session expired — reconnect required')
+  }
+  if (res.status === 429) {
+    throw new Error(
+      'Gmail is rate-limiting this account — try a shorter window, or wait a minute and sync again',
+    )
   }
   if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
   return (await res.json()) as GmailMessageMeta
@@ -764,6 +1017,13 @@ export interface TopEmailsOptions {
   /** Extra Gmail search criteria ANDed with the inbox+time window. */
   search?: string
   interactive?: boolean
+  /**
+   * How many recent messages to score before taking the top `limit`. Each
+   * candidate costs one metadata request, so this trades latency for coverage:
+   * a long lookback needs a wider pool or it ranks only the newest slice of it.
+   * Defaults to SCORE_CANDIDATE_CAP; hard-capped at SCORE_CANDIDATE_MAX.
+   */
+  candidates?: number
 }
 
 export interface TopEmailsResult {
@@ -783,13 +1043,212 @@ export async function fetchTopEmails(
   const token = await getAccessToken(interactive)
   const extra = search?.trim() ? ` ${search.trim()}` : ''
   const query = `${lookbackQuery(lookbackHours)}${extra}`
-  const ids = await listMessageIds(token, query, SCORE_CANDIDATE_CAP)
-  const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
+  const pool = Math.min(
+    Math.max(opts.candidates ?? SCORE_CANDIDATE_CAP, limit),
+    SCORE_CANDIDATE_MAX,
+  )
+  const ids = await listMessageIds(token, query, pool)
+  const metas = await mapLimited(ids, REQUEST_CONCURRENCY, (id) =>
+    getMessageMeta(token, id),
+  )
   const emails = metas
     .map(metaToSummary)
     .sort((a, b) => b.score - a.score || b.date.localeCompare(a.date))
     .slice(0, limit)
   return { emails, mock: false }
+}
+
+// ---------------------------------------------------------------------------
+// Threads: the conversation behind an item
+// ---------------------------------------------------------------------------
+
+export interface ThreadMessage {
+  id: string
+  fromName: string
+  fromEmail: string
+  to: string
+  subject: string
+  /** ISO timestamp. */
+  date: string
+  /** Gmail's own one-line preview of the body. */
+  snippet: string
+  unread: boolean
+  /** True when the message was sent by the account owner. */
+  outbound: boolean
+  url: string
+}
+
+export interface ThreadTimeline {
+  threadId: string
+  subject: string
+  messages: ThreadMessage[]
+  /** Participants in first-seen order, for the hierarchy header. */
+  participants: string[]
+  mock: boolean
+}
+
+/**
+ * Accept whatever the user has to hand: a raw Gmail id, or a Gmail web URL
+ * copied from the address bar. Both carry the id as the last hex-ish segment.
+ */
+export function parseGmailId(input: string): string {
+  const raw = input.trim()
+  if (!raw) return ''
+  const tail = /^https?:\/\//i.test(raw)
+    ? (raw.split(/[#/?]/).filter(Boolean).pop() ?? '')
+    : raw.replace(/^#/, '')
+  // Two id shapes reach this: the API's 16-hex message/thread id, and the
+  // opaque mixed-case id the Gmail web UI puts in its URL (FMfcgz…). Accept
+  // both shapes here — only the API can say whether an id actually resolves,
+  // and rejecting on shape would turn "paste the link from my browser" into a
+  // dead end with no explanation.
+  return /^[A-Za-z0-9_-]{8,}$/.test(tail) ? tail : ''
+}
+
+interface RawThread {
+  id: string
+  messages?: (GmailMessageMeta & { snippet?: string })[]
+}
+
+/**
+ * The thread a message belongs to, oldest first.
+ *
+ * `id` may be a message id or a thread id — Gmail does not tell them apart by
+ * shape, so try the thread endpoint first and fall back to resolving the
+ * message to its threadId. That keeps "paste the id from the Gmail URL"
+ * working, which is the only id a user can actually get hold of.
+ */
+export async function fetchThread(
+  id: string,
+  interactive = false,
+): Promise<ThreadTimeline> {
+  const clean = parseGmailId(id)
+  if (!clean) throw new Error('Not a Gmail message id or link')
+  if (isMockMode()) return mockThread(clean)
+
+  const token = await getAccessToken(interactive)
+
+  let raw: RawThread | null = await getThread(token, clean)
+  if (!raw) {
+    // Not a thread id — try it as a message id and follow it to its thread.
+    const meta = await getMessageMeta(token, clean).catch(() => null)
+    if (meta?.threadId) raw = await getThread(token, meta.threadId)
+  }
+  if (!raw) {
+    // The id the Gmail web UI shows in its address bar is a different
+    // encoding from the API's, and there is no way to convert one to the
+    // other — so say that, rather than "not found".
+    if (!/^[0-9a-f]{8,}$/i.test(clean)) {
+      throw new Error(
+        'that looks like an id from the Gmail web address bar, which the API cannot resolve — attach the message from the Live inbox instead',
+      )
+    }
+    throw new Error('No thread found for that id')
+  }
+
+  const me = (await getProfileEmail(token)).toLowerCase()
+  const messages: ThreadMessage[] = (raw.messages ?? []).map((m) => {
+    const fromRaw = headerValue(m, 'From')
+    const { name, email } = parseFrom(fromRaw)
+    return {
+      id: m.id,
+      fromName: name,
+      fromEmail: email,
+      to: headerValue(m, 'To'),
+      subject: headerValue(m, 'Subject'),
+      date: m.internalDate
+        ? new Date(Number(m.internalDate)).toISOString()
+        : new Date(headerValue(m, 'Date') || 0).toISOString(),
+      snippet: m.snippet ?? '',
+      unread: (m.labelIds ?? []).includes('UNREAD'),
+      outbound: email.toLowerCase() === me,
+      url: gmailWebUrl(m.id),
+    }
+  })
+  messages.sort((a, b) => a.date.localeCompare(b.date))
+
+  const participants: string[] = []
+  for (const m of messages) {
+    const who = m.fromName || m.fromEmail
+    if (who && !participants.includes(who)) participants.push(who)
+  }
+
+  return {
+    threadId: raw.id,
+    subject: messages[0]?.subject || '(no subject)',
+    messages,
+    participants,
+    mock: false,
+  }
+}
+
+/** Returns null on 404 so the caller can try the other id interpretation. */
+async function getThread(
+  token: string,
+  id: string,
+): Promise<RawThread | null> {
+  const url = new URL(
+    `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(id)}`,
+  )
+  url.searchParams.set('format', 'metadata')
+  for (const h of ['From', 'To', 'Subject', 'Date']) {
+    url.searchParams.append('metadataHeaders', h)
+  }
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (res.status === 404 || res.status === 400) return null
+  if (res.status === 401) {
+    setCachedToken(null)
+    throw new Error('Gmail session expired — reconnect required')
+  }
+  if (!res.ok) throw new Error(`Gmail API error (${res.status})`)
+  return (await res.json()) as RawThread
+}
+
+let cachedProfileEmail: string | null = null
+async function getProfileEmail(token: string): Promise<string> {
+  if (cachedProfileEmail !== null) return cachedProfileEmail
+  try {
+    const res = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (!res.ok) return (cachedProfileEmail = '')
+    const data = (await res.json()) as { emailAddress?: string }
+    return (cachedProfileEmail = data.emailAddress ?? '')
+  } catch {
+    // Only used to mark messages as outbound; failing is cosmetic.
+    return (cachedProfileEmail = '')
+  }
+}
+
+function mockThread(id: string): ThreadTimeline {
+  const base = Date.now() - 6 * 86400000
+  const step = 36 * 3600000
+  const cast = [
+    { who: 'Sample Counsel', out: false, snippet: 'Attaching the filing for your review — let me know before Friday.' },
+    { who: 'You', out: true, snippet: 'Thanks — reviewing today, one question on section 4.' },
+    { who: 'Sample Counsel', out: false, snippet: 'Section 4 is the buy-back window. Confirming the deadline stands.' },
+  ]
+  return {
+    threadId: id,
+    subject: 'Sample: thread timeline',
+    participants: ['Sample Counsel', 'You'],
+    mock: true,
+    messages: cast.map((c, i) => ({
+      id: `${id}-${i}`,
+      fromName: c.who,
+      fromEmail: c.out ? 'you@example.com' : 'counsel@example.com',
+      to: c.out ? 'counsel@example.com' : 'you@example.com',
+      subject: 'Sample: thread timeline',
+      date: new Date(base + i * step).toISOString(),
+      snippet: c.snippet,
+      unread: false,
+      outbound: c.out,
+      url: '',
+    })),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -935,7 +1394,9 @@ export async function fetchEmailPage(
     search?.trim() ? ` ${search.trim()}` : ''
   }${filterFragment(filter)}`
   const { ids, nextPageToken } = await listPage(token, q, pageToken, pageSize)
-  const metas = await Promise.all(ids.map((id) => getMessageMeta(token, id)))
+  const metas = await mapLimited(ids, REQUEST_CONCURRENCY, (id) =>
+    getMessageMeta(token, id),
+  )
   const emails = metas.map(metaToSummary)
   return { emails, nextPageToken, mock: false }
 }

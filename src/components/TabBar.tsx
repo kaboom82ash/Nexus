@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { DashboardTab } from '../lib/types'
+import { HOME_TAB_ID, HOME_TAB_NAME } from '../lib/types'
 
 interface TabBarProps {
   tabs: DashboardTab[]
@@ -32,6 +33,20 @@ export function TabBar({
 
   return (
     <div className="tabbar">
+      {/* The homepage is pinned first and holds no tiles, so it has no rename
+          or close affordance — it is a fixed destination, not a user tab. */}
+      <div
+        className={`tab tab--home ${
+          activeTabId === HOME_TAB_ID ? 'tab--active' : ''
+        }`}
+        onClick={() => onSelect(HOME_TAB_ID)}
+        title="Daily Digest homepage"
+      >
+        <span className="tab__icon" aria-hidden="true">
+          ⌂
+        </span>
+        <span className="tab__name">{HOME_TAB_NAME}</span>
+      </div>
       {tabs.map((tab) => {
         const active = tab.id === activeTabId
         return (
@@ -65,20 +80,18 @@ export function TabBar({
                 {tab.name}
               </span>
             )}
-            {tabs.length > 1 && (
-              <button
-                className="tab__close"
-                title="Remove tab"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (confirm(`Remove tab “${tab.name}” and its widgets?`)) {
-                    onRemove(tab.id)
-                  }
-                }}
-              >
-                ✕
-              </button>
-            )}
+            <button
+              className="tab__close"
+              title="Remove tab"
+              onClick={(e) => {
+                e.stopPropagation()
+                if (confirm(`Remove tab “${tab.name}” and its widgets?`)) {
+                  onRemove(tab.id)
+                }
+              }}
+            >
+              ✕
+            </button>
           </div>
         )
       })}

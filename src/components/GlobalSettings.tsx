@@ -73,8 +73,9 @@ export function GlobalSettings({ onClose }: { onClose: () => void }) {
         </p>
         <p className="settings__hint">
           Create a Web OAuth Client ID in Google Cloud with the{' '}
-          <code>gmail.readonly</code> scope and this site's origin in “Authorized
-          JavaScript origins”.
+          <code>gmail.readonly</code> scope — add{' '}
+          <code>calendar.readonly</code> too for the Weekly Briefing's live
+          calendar — and this site's origin in “Authorized JavaScript origins”.
         </p>
 
         <div className="settings__divider" />

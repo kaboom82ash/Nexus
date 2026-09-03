@@ -1,9 +1,68 @@
 # Nexus Dashboard
 
-A tab-based dashboard of live-feed **widgets**. Each tab is a page holding a
-**5 × 5 grid of 25 tiles**; add more tabs whenever you need more room. Drop a
-widget into any empty tile, remove it with the ✕, and everything persists to
-your browser's `localStorage`.
+Nexus opens on the **Daily Digest** — a chief-of-staff console —
+with tab-based dashboards of live-feed **widgets** beside it.
+
+## Homepage: the Daily Digest
+
+The pinned first tab is the [Daily Digest](weekly-briefing/README.md): one
+self-contained page fusing a Gmail sweep and a Google Calendar sweep into a
+punch list, deadline-ranked actions, a category inbox, a 14-day calendar grid,
+draft replies, and a reference vault. Checking any item queues it to the punch
+list, which persists in your browser across weekly rebuilds.
+
+It is served verbatim from `public/weekly-briefing.html` and mounted in an
+iframe by `src/components/WeeklyBriefing.tsx`, so its own styles and script stay
+isolated from the app shell — and refreshing the week's content is a file swap,
+not a code change. The homepage cannot be renamed or removed.
+
+Two files in `public/briefing/` adapt the page to the app without touching its
+content, so a weekly rebuild does not disturb either:
+
+- **`theme.css`** restates the briefing's palette tokens as Nexus's, so it
+  wears the app's dark theme. The page tokenizes every color, so this is
+  variables only — no rule here targets its markup.
+- **`bridge.js`** gives it **live Gmail and Calendar data**. A *Live data* strip
+  under the masthead connects Google and syncs; a **Live inbox** section leads
+  the Actions tab and a **Live calendar** section leads the Calendar tab. Live
+  items are rendered in the page's own markup vocabulary, so they get the same
+  checkbox as swept items and **queue to the punch list identically**.
+
+Live data uses the dashboard's existing Google client: one consent covers
+`gmail.readonly` and `calendar.readonly` together, and the session is shared
+with every widget — connect in the briefing and the Gmail tiles are connected
+too. Without a Client ID configured everything runs on sample data, and opened
+as a standalone file the page says so and behaves exactly as it always did.
+
+The deployed build gets its Client ID from **`.env.production`**, committed to
+the repo. A browser OAuth client id is not a secret — Google publishes it in
+page source by design, and the control that matters is the client's *Authorized
+JavaScript origins* allowlist. Note that `.github/workflows/deploy.yml`
+deliberately does **not** pass `VITE_GOOGLE_CLIENT_ID` from a CI secret: an
+unset secret renders as an empty string, an existing env var outranks the
+`.env` file in Vite, and the deployed site would silently fall back to sample
+data.
+
+## Passcode gate
+
+The app sits behind a passcode (`src/components/PasscodeGate.tsx`). Set
+`VITE_APP_PASSCODE_HASH` to gate every visitor with one passcode; leave it unset
+and each browser sets its own on first use, which locks the app on that device.
+
+**This is a deterrent, not access control.** Nexus is a static site: every file
+it serves — `weekly-briefing.html` and its contents included — can be fetched
+directly by URL, and the gate is client-side code the visitor's own browser
+runs. It stops someone opening the app on your unlocked laptop, and a casual
+visitor who lands on the URL. It does not stop anyone willing to open devtools
+or request the HTML directly, and it cannot: there is no server here to withhold
+anything. Real protection means a private repository, or a host that
+authenticates before serving bytes.
+
+## Tile dashboards
+
+Every other tab is a page holding a **5 × 5 grid of 25 tiles**; add more tabs
+whenever you need more room. Drop a widget into any empty tile, remove it with
+the ✕, and everything persists to your browser's `localStorage`.
 
 ## First widget: Gmail Inbox
 
@@ -23,8 +82,10 @@ Shows **how many new emails** landed in your inbox over a time window (default
    **OAuth 2.0 Client ID** of type **Web application**.
 2. Under **Authorized JavaScript origins**, add the origin you serve this app
    from (e.g. `http://localhost:5173` for local dev).
-3. Enable the **Gmail API** for the project, and add the `gmail.readonly`
-   scope on the OAuth consent screen.
+3. Enable the **Gmail API** and the **Google Calendar API** for the project,
+   and add the `gmail.readonly` and `calendar.readonly` scopes on the OAuth
+   consent screen. (Calendar powers the homepage's live calendar; leave it off
+   and the rest still works.)
 4. Put the Client ID in `.env` as `VITE_GOOGLE_CLIENT_ID`, or paste it into the
    widget's ⚙ settings at runtime.
 
@@ -90,15 +151,32 @@ Widgets are self-contained and registered in one place, so adding a new one is
 a small, isolated change:
 
 ```
+public/
+  weekly-briefing.html  # the homepage, served as-is (swap it to refresh the week)
+  briefing/
+    theme.css           # restates the page's palette tokens as the app's
+    bridge.js           # live Gmail + Calendar inside the page
+weekly-briefing/        # the briefing's spec, sample data, and architecture notes
 src/
-  lib/          # types, storage, id, Gmail client
+  lib/          # types, storage, id, Gmail + Calendar clients, briefing bridge
   widgets/
     types.ts        # WidgetDefinition / props contract
     registry.ts     # <-- add new widgets here
     GmailInboxWidget.tsx
-  components/    # TabBar, DashboardGrid, Tile, WidgetPicker, Modal
-  App.tsx        # tab + tile state, persistence
+  components/    # TabBar, DashboardGrid, Tile, WidgetPicker, Modal, WeeklyBriefing
+  App.tsx        # active view (homepage or a tab) + tile state, persistence
 ```
+
+The active view is one field — `activeTabId` in the saved state — which is
+either a tab id or the reserved `HOME_TAB_ID`, so the homepage costs the tile
+code nothing.
+
+`lib/calendar.ts` is built on `lib/gmail.ts`'s OAuth layer rather than its own:
+`requestScopeToken` shares the client id, the GIS loader and the token cache,
+and `requestScopes` gets one token for several scopes and files it under each,
+so adding a Google API is a REST client, not a second sign-in.
+`lib/briefingBridge.ts` publishes those two clients on `window.__nexusBriefing`
+for the briefing page to call — see the comment there for the contract.
 
 ### Adding a widget
 
