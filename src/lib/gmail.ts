@@ -201,6 +201,46 @@ function validScopeToken(scope: string): string | null {
   return null
 }
 
+/**
+ * Whether Google granted this scope, regardless of how the expiry maths comes
+ * out. Grant and freshness are different questions, and conflating them is a
+ * sign-in loop: `validScopeToken` subtracts a 60s safety margin from an expiry
+ * derived from the device clock, so a token Google JUST issued reads as
+ * ungranted whenever that clock runs fast (or `expires_in` comes back short).
+ * The caller then reports "access was not granted", the user signs in again,
+ * Google grants again, it still reads ungranted — forever, with nothing on
+ * screen to explain it. Verify grants with this; use validScopeToken only to
+ * decide whether a cached token is still usable.
+ */
+function hasScopeGrant(scope: string): boolean {
+  return !!tokens[scope]
+}
+
+/**
+ * Interactive sign-in circuit breaker. Whatever else goes wrong, the app must
+ * never be able to reopen Google's consent screen without end: past this many
+ * prompts for one scope inside the window, refuse and say so.
+ */
+const MAX_PROMPTS = 3
+const PROMPT_WINDOW_MS = 60_000
+const promptLog: Record<string, number[]> = {}
+
+function tooManyPrompts(scope: string): boolean {
+  const now = Date.now()
+  const recent = (promptLog[scope] ?? []).filter((t) => now - t < PROMPT_WINDOW_MS)
+  promptLog[scope] = recent
+  return recent.length >= MAX_PROMPTS
+}
+
+function notePrompt(scope: string): void {
+  promptLog[scope] = (promptLog[scope] ?? []).concat(Date.now())
+}
+
+/** Called once a sign-in genuinely works, so a later retry starts fresh. */
+function clearPromptLog(scope: string): void {
+  delete promptLog[scope]
+}
+
 function clearAllScopeTokens(): void {
   tokens = {}
   persistTokens()
@@ -241,9 +281,15 @@ async function requestToken(
   }
 
   if (interactive) {
+    if (tooManyPrompts(scope)) {
+      throw new Error(
+        'Google sign-in was opened several times without succeeding — something other than consent is failing. Check the browser console, and that this site is in the OAuth client\u2019s Authorized JavaScript origins.',
+      )
+    }
     // Coalesce concurrent interactive requests into a single popup.
     const pending = interactiveInflight[scope]
     if (pending) return pending
+    notePrompt(scope)
     const p = acquireToken(scope, true, forceConsent)
     interactiveInflight[scope] = p
     // Clear on settle without creating an unhandled rejection.
@@ -315,6 +361,12 @@ async function acquireToken(
         // asked for came back; otherwise a repeat request must reach Google.
         if (asked.length > 1 && asked.every((a) => granted.includes(a))) {
           setScopeToken(scope, { token, expiresAt })
+        }
+        // A grant that landed means the user is not stuck; let them retry
+        // freely later without the breaker holding a stale count.
+        if (granted.length) {
+          clearPromptLog(scope)
+          for (const g of granted) clearPromptLog(g)
         }
         // Broadcast ONLY on an interactive sign-in so all widgets refresh once
         // after login. Silent/background refreshes must NOT broadcast, or they
@@ -388,7 +440,7 @@ export async function requestScopes(
   if (unique.length === 0) throw new Error('No scopes requested')
   if (unique.length === 1) {
     const only = await requestToken(unique[0], interactive, false, forceConsent)
-    if (validScopeToken(unique[0]) === null) {
+    if (!hasScopeGrant(unique[0])) {
       throw new Error(
         `access was not granted for ${scopeLabel(unique[0])} — reconnect and leave the permission ticked`,
       )
@@ -407,7 +459,7 @@ export async function requestScopes(
   // to do is check what actually landed.
   const token = await requestToken(combined, interactive, false, forceConsent)
 
-  const missing = unique.filter((s) => validScopeToken(s) === null)
+  const missing = unique.filter((s) => !hasScopeGrant(s))
   if (missing.length) {
     throw new Error(
       `access was not granted for ${missing
@@ -442,9 +494,16 @@ function announceGrant(unique: string[], interactive: boolean): void {
   }
 }
 
-/** Whether a token for `scope` is already granted and unexpired. */
+/**
+ * Whether `scope` has been granted. This drives what the UI SHOWS, so it asks
+ * about the grant, not about freshness: a chip that reads "Connect" while the
+ * scope is in fact held invites a sign-in that changes nothing, and that is a
+ * loop the user drives by hand — click, grant, still says Connect, click.
+ * Staleness is handled where it belongs, in requestToken, which refreshes a
+ * cached token when it is actually used.
+ */
 export function isScopeAuthorized(scope: string): boolean {
-  return validScopeToken(scope) !== null
+  return hasScopeGrant(scope)
 }
 
 /** Drop a cached token — used when the API answers 401 for that scope. */
