@@ -156,6 +156,14 @@ interface CachedToken {
 
 // Additional scope for sending mail (used by the direct Evernote converter).
 const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
+/**
+ * Marking a message read is a write, so it needs more than gmail.readonly.
+ * It is deliberately NOT part of the connect flow: nothing on the page needs
+ * write access until you press the button, and asking for it up front turns
+ * a read-only dashboard into one whose consent screen says it can change your
+ * mail. Requested on first use instead, on the click that wants it.
+ */
+const GMAIL_MODIFY_SCOPE = 'https://www.googleapis.com/auth/gmail.modify'
 
 const TOKENS_KEY = 'nexus.google.tokens'
 
@@ -477,6 +485,7 @@ export async function requestScopes(
 function scopeLabel(scope: string): string {
   if (scope === GMAIL_SCOPE) return 'Gmail'
   if (scope === GMAIL_SEND_SCOPE) return 'Gmail send'
+  if (scope === GMAIL_MODIFY_SCOPE) return 'Gmail (mark read)'
   if (scope.includes('calendar')) return 'Calendar'
   return scope
 }
@@ -633,6 +642,48 @@ export async function sendGmailMessage(opts: SendMailOptions): Promise<void> {
       detail = err?.error?.message || detail
     } catch {
       /* ignore */
+    }
+    throw new Error(detail)
+  }
+}
+
+/**
+ * Clear the UNREAD label on messages, in the real mailbox.
+ *
+ * This is the one call in this module that CHANGES anything in Gmail, so it
+ * asks for its scope at the moment it is used rather than at connect time,
+ * and it is always interactive: the first press opens Google's consent screen,
+ * later ones do not. `batchModify` takes up to 1000 ids and answers 204 with
+ * no body, so a successful call returns nothing to inspect.
+ */
+export async function markMessagesRead(ids: string[]): Promise<void> {
+  const unique = Array.from(new Set(ids.filter(Boolean)))
+  if (!unique.length) return
+  if (isMockMode()) return   // sample data has no mailbox to write to
+
+  const token = await requestToken(GMAIL_MODIFY_SCOPE, true)
+  const res = await fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ids: unique, removeLabelIds: ['UNREAD'] }),
+    },
+  )
+  if (res.status === 401) {
+    setScopeToken(GMAIL_MODIFY_SCOPE, null)
+    throw new Error('Gmail session expired — reconnect required')
+  }
+  if (!res.ok) {
+    let detail = `Gmail API error (${res.status})`
+    try {
+      const err = await res.json()
+      detail = err?.error?.message || detail
+    } catch {
+      /* the status alone is the message */
     }
     throw new Error(detail)
   }

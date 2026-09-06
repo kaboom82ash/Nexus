@@ -19,6 +19,8 @@
 import {
   GMAIL_READONLY_SCOPE,
   fetchThread,
+  markMessagesRead,
+  fetchInboxCounts,
   fetchTopEmails,
   isMockMode,
   isScopeAuthorized,
@@ -121,6 +123,22 @@ export interface BriefingBridge {
   fetchThread(id: string): Promise<BridgeThread>
   /** Normalize a pasted Gmail id or URL; '' when it is neither. */
   parseId(input: string): string
+  /**
+   * Clear UNREAD on these messages in the real mailbox. Asks for write access
+   * the first time, so it must be called from a click.
+   */
+  markRead(ids: string[]): Promise<{ ok: boolean; mock: boolean; error?: string }>
+  /**
+   * How much mail actually arrived in a window, counted by Gmail rather than
+   * inferred from the ranked sample the page holds. A "23 unread today" that
+   * really means "23 of the 20 we ranked" is a number nobody can act on.
+   */
+  mailCounts(hours: number): Promise<{
+    total: number
+    unread: number
+    mock: boolean
+    error?: string
+  }>
   /** Draft a reply to a message. `mock` is true without an Anthropic key. */
   draftReply(input: {
     id: string
@@ -142,7 +160,8 @@ function status(): BridgeStatus {
 }
 
 const bridge: BriefingBridge = {
-  version: 1,
+  // 2: adds markRead and mailCounts.
+  version: 2,
 
   status,
 
@@ -166,6 +185,30 @@ const bridge: BriefingBridge = {
 
   parseId(input: string) {
     return parseGmailId(input)
+  },
+
+  async mailCounts(hours: number) {
+    try {
+      const c = await fetchInboxCounts({ lookbackHours: hours })
+      return { total: c.total, unread: c.unread, mock: c.mock }
+    } catch (err) {
+      return {
+        total: 0,
+        unread: 0,
+        mock: isMockMode(),
+        error: message(err, 'Could not count your inbox'),
+      }
+    }
+  },
+
+  async markRead(ids: string[]) {
+    if (isMockMode()) return { ok: true, mock: true }
+    try {
+      await markMessagesRead(ids)
+      return { ok: true, mock: false }
+    } catch (err) {
+      return { ok: false, mock: false, error: message(err, 'Could not mark that read') }
+    }
   },
 
   async draftReply({ id, subject, from, snippet }) {

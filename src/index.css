@@ -771,6 +771,59 @@ a.mailrow__main--link:hover .mailrow__subject {
 }
 
 /* ---------- Global category filter bar ---------- */
+.digestbar {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.digestbar .catbar {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The digest's own sections, hoisted out of the iframe and sat under the
+   filter that governs them. Bigger than the chips above: this is where you
+   change what you are looking at, and it should read as the primary move. */
+.tabstrip {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+}
+.tabstrip__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.tabstrip__btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.tabstrip__btn.is-on {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.tabstrip__n {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.22);
+}
+.tabstrip__btn.is-on .tabstrip__n {
+  background: rgba(0, 0, 0, 0.18);
+}
+
 .catbar {
   display: flex;
   align-items: center;

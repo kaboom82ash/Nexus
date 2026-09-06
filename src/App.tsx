@@ -15,6 +15,7 @@ import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
 import { GoogleAuthBar } from './components/GoogleAuthBar'
 import { CategoryBar } from './components/CategoryBar'
+import { TabStrip } from './components/TabStrip'
 import { ActionsMenu } from './components/ActionsMenu'
 import { GlobalSettings } from './components/GlobalSettings'
 import { WeeklyBriefing } from './components/WeeklyBriefing'
@@ -192,8 +193,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* One filter for the whole digest, above everything it governs. */}
-      {onHome && <CategoryBar />}
+      {/* One filter for the whole digest, above everything it governs, and
+          the digest's own sections directly under it. */}
+      {onHome && (
+        <div className="digestbar">
+          <CategoryBar />
+          <TabStrip />
+        </div>
+      )}
 
       <main className={`app__main ${onHome ? 'app__main--home' : ''}`}>
         {onHome || !activeTab ? (

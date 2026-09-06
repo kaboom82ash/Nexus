@@ -52,14 +52,6 @@
   /** Own punch-list items and thread pins, kept beside the page's own state. */
   var OWN_KEY = 'ak-briefing-own'
 
-  // Each Google service gets its own icon and its own connection state,
-  // because a partial grant is a real outcome: the consent screen lets you
-  // approve mail and refuse calendar, and one merged indicator would hide it.
-  var SERVICES = [
-    { key: 'gmail', icon: '✉️', label: 'Gmail', what: 'inbox' },
-    { key: 'calendar', icon: '📅', label: 'Calendar', what: 'events' },
-  ]
-
   // ---- bridge handshake ---------------------------------------------------
 
   function getBridge() {
@@ -68,7 +60,11 @@
       var b = window.parent && window.parent !== window
         ? window.parent.__nexusBriefing
         : null
-      return b && b.version === 1 ? b : null
+      // A MINIMUM, not an equality. The contract only ever grows — new methods
+      // are added, existing ones keep their shape — so pinning the exact
+      // version means the next bump silently disconnects this whole file and
+      // the page falls back to "open this inside Nexus" with no error anywhere.
+      return b && b.version >= 1 ? b : null
     } catch (e) {
       return null
     }
@@ -97,27 +93,12 @@
     return day + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   }
 
-  function relativeDay(iso) {
-    var d = new Date(iso)
-    if (isNaN(d.getTime())) return 99
-    var start = new Date()
-    start.setHours(0, 0, 0, 0)
-    return Math.floor((d.getTime() - start.getTime()) / 86400000)
-  }
-
   // The page's four severities carry all its visual weight, so live items are
   // rated on the same scale rather than introducing a fifth state.
   function mailSeverity(score) {
     if (score >= 10) return 'critical'
     if (score >= 6) return 'high'
     if (score >= 3) return 'medium'
-    return 'low'
-  }
-
-  function eventSeverity(iso) {
-    var days = relativeDay(iso)
-    if (days <= 0) return 'high'
-    if (days <= 3) return 'medium'
     return 'low'
   }
 
@@ -266,13 +247,9 @@
   // ---- the live strip -----------------------------------------------------
 
   var strip, statusEl, syncBtn, rangeSel, customDays
-  var chips = {}
   var busy = false
   var autoTimer = null
   var lastSyncAt = 0
-  // Last error per service, so a granted-but-failing service (scope approved,
-  // API disabled) reads as broken rather than as a reassuring tick.
-  var svcErrors = {}
 
   /**
    * Why a service is failing decides what a retry should DO.
@@ -315,24 +292,6 @@
     '.live-btn:hover{border-color:var(--accent)}',
     '.live-btn[disabled]{opacity:.6;cursor:default}',
     '.live-btn--primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}',
-    '.live-chip{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;',
-    'padding:4px 9px;border-radius:999px;border:1px solid var(--line);',
-    'background:var(--surface-2);color:var(--muted);cursor:pointer}',
-    '.live-chip__icon{font-size:13px;line-height:1;filter:grayscale(1);opacity:.55}',
-    '.live-chip__state{font-weight:700;font-size:11px}',
-    '.live-chip--on{color:var(--ink);border-color:var(--low)}',
-    '.live-chip--on .live-chip__icon{filter:none;opacity:1}',
-    '.live-chip--on .live-chip__state{color:var(--low)}',
-    '.live-chip--off{color:var(--ink);border-color:var(--accent)}',
-    '.live-chip--off .live-chip__state{color:var(--accent)}',
-    '.live-chip--off:hover{background:var(--accent);color:var(--accent-ink)}',
-    '.live-chip--off:hover .live-chip__state{color:var(--accent-ink)}',
-    '.live-chip--sample .live-chip__state{color:var(--high)}',
-    '.live-chip--err{color:var(--ink);border-color:var(--critical)}',
-    '.live-chip--err .live-chip__state{color:var(--critical)}',
-    '.live-chip--err .live-chip__icon{filter:none;opacity:1}',
-    '.live-chip[disabled]{cursor:default}',
-    '.live-auto{color:var(--muted);font-size:11px}',
     '.live-sep{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}',
     '.sync-stamp{text-align:right;margin-bottom:6px}',
     '.sync-stamp__label{font-size:10px;font-weight:700;letter-spacing:.08em;',
@@ -352,8 +311,7 @@
     'gap:10px;overflow:visible}',
     '.stat-row--punch{grid-template-columns:repeat(4,minmax(0,1fr))}',
     '.stat-row--cal{grid-template-columns:repeat(3,minmax(0,1fr)) 1.4fr}',
-    '.stat-row--mail{grid-template-columns:repeat(4,minmax(0,1fr))}',
-    '@media (max-width:860px){.stat-row--punch,.stat-row--cal,.stat-row--mail{',
+    '@media (max-width:860px){.stat-row--punch,.stat-row--cal{',
     'grid-template-columns:repeat(2,minmax(0,1fr))}}',
     '.stat-rows .stat{border-radius:12px;border:1px solid var(--line);',
     'background:var(--surface);padding:12px 14px}',
@@ -362,8 +320,6 @@
     '.live-select,.live-days{font:inherit;font-size:12px;padding:4px 6px;border-radius:8px;',
     'border:1px solid var(--line);background:var(--surface-2);color:var(--ink)}',
     '.live-days{width:64px}',
-    '.live-section{margin-bottom:24px}',
-    '.live-band{border-left-color:var(--accent)}',
     '.live-tag{font-size:10px;font-weight:700;text-transform:uppercase;margin-left:6px;',
     'padding:1px 5px;border-radius:4px;background:var(--high-bg);color:var(--high)}',
 
@@ -424,36 +380,9 @@
     '@media (max-width:900px){.mail-line__when,.mail-line__from{flex:0 0 auto}}',
 
     '.mon-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
-    '.mon-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}',
-    '.cat-tile{display:flex;flex-direction:column;align-items:center;gap:2px;',
-    'min-width:88px;padding:9px 12px;border-radius:12px;font:inherit;cursor:pointer;',
-    'border:1px solid var(--line);background:var(--surface);color:var(--ink);',
-    'border-bottom-width:3px;transition:transform .08s ease}',
-    '.cat-tile:hover{transform:translateY(-1px)}',
-    '.cat-tile__icon{font-size:17px;line-height:1}',
-    '.cat-tile__name{font-size:11px;font-weight:600}',
-    '.cat-tile__n{font-size:11px;color:var(--muted)}',
-    '.cat-tile.is-on{background:var(--surface-2);border-color:var(--accent)}',
-    '.cat-tile.is-on .cat-tile__n{color:var(--ink)}',
-    '.cat-tile.cat-personal{border-bottom-color:var(--cat-personal)}',
-    '.cat-tile.cat-kids{border-bottom-color:var(--cat-kids)}',
-    '.cat-tile.cat-home{border-bottom-color:var(--cat-home)}',
-    '.cat-tile.cat-finance{border-bottom-color:var(--cat-finance)}',
-    '.cat-tile.cat-health{border-bottom-color:var(--cat-health)}',
-    '.cat-tile.cat-lifestyle{border-bottom-color:var(--cat-lifestyle)}',
-    '.cat-tile--all{border-bottom-color:var(--accent)}',
     '.mon-q{flex:1 1 240px}',
     '.mon-count{color:var(--muted);font-size:12px;margin-bottom:10px;',
     'font-family:"IBM Plex Mono",monospace}',
-    '.mon-row{border:1px solid var(--line);border-left:4px solid var(--line);',
-    'border-radius:10px;background:var(--surface);padding:12px 14px;margin-bottom:10px}',
-    '.mon-row.sev-critical{border-left-color:var(--critical)}',
-    '.mon-row.sev-high{border-left-color:var(--high)}',
-    '.mon-row.sev-medium{border-left-color:var(--medium)}',
-    '.mon-row.sev-low{border-left-color:var(--low)}',
-    '.mon-row__head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
-    '.mon-row__title{font-weight:600}',
-    '.mon-row__meta{color:var(--muted);font-size:12px;margin-top:3px}',
     '.mon-chip{font-size:11px;padding:1px 7px;border-radius:999px;',
     'border:1px solid var(--line);color:var(--muted)}',
     '.mon-chip--done{color:var(--low);border-color:var(--low)}',
@@ -502,7 +431,6 @@
     // Everything inside inherits the tile ink, at reduced weight, so the
     // colour keeps its meaning instead of fighting the page tokens.
     '.mon-tile__meta{font-size:11.5px;opacity:.78;margin-top:3px}',
-    '.mon-tile__chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}',
     '.mon-tile .mon-chip{border-color:currentColor;color:inherit;opacity:.85}',
     '.mon-tile .cat-links{margin-top:7px}',
     '.mon-tile .mail-link,.mon-tile .cal-btn{color:inherit;text-decoration:underline}',
@@ -564,10 +492,65 @@
     '.rank-title{flex:1;font-size:13px}',
     '.rank-when{color:var(--muted);font-size:11.5px}',
 
+    // One-page dashboard: each calendar view a disclosure, so all four are
+    // reachable without leaving the page.
+    '.op-sec{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;',
+    'background:var(--surface);overflow:hidden}',
+    '.op-sec__head{cursor:pointer;padding:12px 16px;font-size:14px;font-weight:700;',
+    'list-style:none;display:flex;align-items:center;gap:8px}',
+    '.op-sec__head::-webkit-details-marker{display:none}',
+    '.op-sec__head::before{content:"▸";color:var(--muted);font-size:12px}',
+    '.op-sec[open] .op-sec__head::before{content:"▾"}',
+    '.op-sec__head:hover{background:var(--surface-2)}',
+    '.op-sec__body{padding:0 16px 16px;border-top:1px solid var(--line)}',
+    '.op-sec__body .section-head{margin-top:14px}',
+
+    // Suggested planning: one line per proposed block, the drive time big
+    // enough to read at a glance and the add control always in the same place.
+    '.plan-list{border:1px solid var(--line);border-radius:12px;overflow:hidden;',
+    'margin-bottom:16px}',
+    '.plan-row{display:flex;align-items:center;gap:14px;padding:10px 14px;',
+    'background:var(--surface);border-bottom:1px solid var(--line)}',
+    '.plan-row:last-child{border-bottom:none}',
+    '.plan-when{flex:0 0 92px;font-size:12px;color:var(--muted)}',
+    '.plan-drive{flex:0 0 62px;display:flex;align-items:baseline;gap:3px}',
+    '.plan-drive b{font-size:26px;font-weight:700;line-height:1}',
+    '.plan-drive__u{font-size:10px;text-transform:uppercase;letter-spacing:.05em;',
+    'color:var(--muted)}',
+    '.plan-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}',
+    '.plan-title{font-size:13px;font-weight:600}',
+    '.plan-meta{font-size:11.5px;color:var(--muted);overflow:hidden;',
+    'text-overflow:ellipsis;white-space:nowrap}',
+    '.plan-add{flex:0 0 auto;font-size:12px;padding:5px 11px;border-radius:8px;',
+    'border:1px solid var(--accent);color:var(--accent);text-decoration:none;',
+    'white-space:nowrap}',
+    '.plan-add:hover{background:var(--accent);color:var(--accent-ink)}',
+
+    // The inbox section: two windows side by side, each a small board of
+    // numbers with the categories under it.
+    '.inbox-wins{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));',
+    'gap:12px;margin-bottom:16px}',
+    '.inbox-win{border:1px solid var(--line);border-radius:12px;padding:12px 14px;',
+    'background:var(--surface)}',
+    '.inbox-win__head{display:flex;align-items:baseline;justify-content:space-between;',
+    'gap:8px;font-size:12px;font-weight:700;text-transform:uppercase;',
+    'letter-spacing:.05em;color:var(--muted);margin-bottom:8px}',
+    '.inbox-win__src{font-size:10px;font-weight:600;text-transform:none;',
+    'letter-spacing:0;opacity:.8}',
+    '.inbox-nums{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px}',
+    '.inbox-cats{display:flex;gap:6px;flex-wrap:wrap}',
+    '.inbox-cat{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;',
+    'padding:3px 9px;border-radius:999px;border:1px solid var(--line);',
+    'background:var(--surface-2)}',
+    '.inbox-cat b{font-size:12.5px}',
+
     '.close-btn{font:inherit;font-size:11px;line-height:1;padding:2px 8px;margin-left:8px;',
     'border-radius:6px;border:1px solid currentColor;background:rgba(0,0,0,.12);',
     'color:inherit;cursor:pointer}',
     '.close-btn:hover{background:rgba(0,0,0,.25)}',
+    '.dismiss-btn{margin-left:4px;opacity:.75}',
+    '.dismiss-btn:hover{opacity:1}',
+    '.mon-close-btn{color:var(--critical)}',
     // A closed item leaves the working view entirely. It is not deleted — it
     // is a completed punch-list entry, reopenable from the tile there.
     '.is-closed{display:none !important}',
@@ -671,19 +654,6 @@
     'color:var(--muted)}',
     '.logi-empty{padding:14px 16px}',
 
-    '.wk-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;',
-    'margin-bottom:22px}',
-    '@media (max-width:900px){.wk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}',
-    '@media (max-width:560px){.wk-grid{grid-template-columns:1fr}}',
-    '.wk-day{border:1px solid var(--line);border-radius:12px;background:var(--surface);',
-    'padding:10px;min-height:96px}',
-    '.wk-day--today{border-color:var(--accent)}',
-    '.wk-day__head{font-size:11px;font-weight:700;text-transform:uppercase;',
-    'letter-spacing:.05em;color:var(--muted);display:flex;justify-content:space-between;',
-    'margin-bottom:8px}',
-    '.wk-day--today .wk-day__head{color:var(--accent)}',
-    '.wk-day__num{font-family:"IBM Plex Mono",monospace}',
-    '.wk-day__empty{color:var(--muted);font-size:12px}',
     '.wk-ev{display:block;font-size:11.5px;line-height:1.3;padding:5px 7px;',
     'border-radius:8px;margin-bottom:5px;text-decoration:none;color:#0d1412;',
     'background:var(--cat-personal)}',
@@ -846,54 +816,15 @@
    * connection state reaches the UI, so it can never drift from what the
    * bridge actually holds a token for.
    */
-  function renderChips(st) {
-    SERVICES.forEach(function (svc) {
-      var chip = chips[svc.key]
-      if (!chip) return
-      var sample = st && st.mock
-      var on = st && st[svc.key]
-      var err = svcErrors[svc.key]
-      // A granted scope whose API still fails is NOT connected in any sense
-      // the reader cares about, so the error state outranks the tick.
-      var state = sample ? 'sample' : err ? 'err' : on ? 'on' : 'off'
-
-      chip.className = 'live-chip live-chip--' + state
-      chip.querySelector('.live-chip__state').textContent = {
-        sample: 'sample',
-        err: errorKind(err) === 'config' ? 'setup' : '!',
-        on: '✓',
-        off: 'Connect',
-      }[state]
-      // Retrying consent is the fix for a scope problem, so a failing chip
-      // stays clickable; a healthy or sample one has nothing to do.
-      chip.disabled = state === 'sample' || state === 'on'
-      chip.title = {
-        sample: svc.label + ': sample data — no Google Client ID configured',
-        err: svc.label + ': ' + err +
-          (errorKind(err) === 'config'
-            ? ' (signing in again will not help — fix it in Google Cloud, then click to re-check)'
-            : ' (click to be asked for access again)'),
-        on: svc.label + ' connected (read-only) — keeping the ' + svc.what + ' up to date',
-        off: 'Connect ' + svc.label + ' (read-only) to load your ' + svc.what,
-      }[state]
-    })
-    if (syncBtn) {
-      syncBtn.hidden = !st || (!st.mock && !st.gmail && !st.calendar)
-      syncBtn.disabled = busy
-    }
-  }
-
-  /** Standalone page: no parent to connect through, so say so on the chips. */
-  function renderChipsUnavailable() {
-    SERVICES.forEach(function (svc) {
-      var chip = chips[svc.key]
-      if (!chip) return
-      chip.className = 'live-chip'
-      chip.querySelector('.live-chip__state').textContent = '—'
-      chip.disabled = true
-      chip.title = svc.label + ' needs the Nexus app, which is where sign-in lives'
-    })
-    if (syncBtn) syncBtn.hidden = true
+  /**
+   * The sync button only makes sense once something is connected. The
+   * per-service indicators it used to sit beside now live in the app's header,
+   * which owns Google connection — this frame reports, it does not connect.
+   */
+  function renderSyncButton(st) {
+    if (!syncBtn) return
+    syncBtn.hidden = !st || (!st.mock && !st.gmail && !st.calendar)
+    syncBtn.disabled = busy
   }
 
   // ---- live sections ------------------------------------------------------
@@ -905,40 +836,6 @@
    * list. They carry `data-sync`, the page's own stable-identity mechanism, so
    * a message queued on one sync keeps the same punch-list entry on the next.
    */
-  function ensureSection(spec) {
-    var panel = document.getElementById(spec.panelId)
-    if (!panel) return null
-    var section = document.getElementById(spec.id)
-    if (!section) {
-      section = el('section', 'live-section')
-      section.id = spec.id
-      // A band is a two-column grid — label rail, then items. Without the
-      // label column the items land in the 150px rail.
-      section.innerHTML =
-        '<div class="section-head">' +
-        '<h2>' + esc(spec.heading) + '</h2>' +
-        '<span class="sub">' + esc(spec.sub) + '</span>' +
-        '</div>' +
-        '<div class="cat-grid-band live-band">' +
-        '<div class="cat-grid-label">' +
-        '<span class="icon">' + spec.icon + '</span>' +
-        '<span class="name">' + esc(spec.label) + '</span>' +
-        '<span class="cnt live-count"></span>' +
-        '<a class="mail-link" href="' + esc(spec.href) + '" target="_blank" rel="noopener">' +
-        esc(spec.linkLabel) + '</a>' +
-        '</div>' +
-        '<div class="cat-grid-items live-items"></div>' +
-        '</div>'
-      panel.insertBefore(section, panel.firstChild)
-    }
-    return section.querySelector('.live-items')
-  }
-
-  function setCount(sectionId, n) {
-    var c = document.querySelector('#' + sectionId + ' .live-count')
-    if (c) c.textContent = n + (n === 1 ? ' item' : ' items')
-  }
-
   /**
    * Mail no longer has a section on Actions & Inbox — it has its own 24/7
    * tab, and the same messages listed in two places meant two sets of
@@ -979,6 +876,13 @@
         '" data-snippet="' + esc((m.reasons || []).join(', ')) +
         '" title="Draft a reply to this message">' +
         (compact ? '✍️' : '✍️ Draft reply') + '</button>' : '') +
+      // Only offered on mail that is actually unread: a button that would do
+      // nothing is worse than no button, and this one costs a write scope.
+      (m.id && m.unread
+        ? '<button type="button" class="live-attach live-read" data-mid="' + esc(m.id) +
+          '" title="Mark this read in Gmail">' +
+          (compact ? '📖' : '📖 Mark read') + '</button>'
+        : '') +
       '</div>'
 
     // No data-cat: the page's own inferCategory() reads the title and always
@@ -1353,7 +1257,7 @@
         queued = false
         renderStats(lastData.events, lastData.mail)
         renderMonitor(bridge)
-        renderTopActions(bridge)
+        renderTopActions()
         refreshTabCounts()
       }, 60)
     }).observe(root, { childList: true, subtree: true })
@@ -1528,7 +1432,10 @@
     }
     // "At a glance" is the home view's job, so it rides with the summary tab.
     wrap.querySelector('.stat-body').innerHTML =
-      rows + (activeTab === 'punchlist' || activeTab === 'vault' ? glanceHtml(events, mail) : '')
+      rows +
+      (activeTab === 'punchlist' || activeTab === 'vault' || activeTab === 'onepage'
+        ? glanceHtml(events, mail)
+        : '')
     syncScrollPadding()
   }
 
@@ -1539,11 +1446,6 @@
    * A draft is a record of what you were going to say at a point in time, so
    * regenerating adds a version rather than overwriting one.
    */
-  function draftsFor(id) {
-    own.drafts = own.drafts || {}
-    return own.drafts[id] || []
-  }
-
   function addDraft(id, meta, text, mock) {
     own.drafts = own.drafts || {}
     own.drafts[id] = own.drafts[id] || []
@@ -1593,7 +1495,7 @@
       host.addEventListener('click', function (e) {
         var copy = e.target.closest('.gd-copy')
         if (copy) {
-          copyText(decodeURIComponent(copy.dataset.text))
+          if (typeof copyText === 'function') copyText(decodeURIComponent(copy.dataset.text))
           copy.textContent = '✓ Copied'
           setTimeout(function () { copy.textContent = '📋 Copy' }, 1800)
           return
@@ -1819,6 +1721,45 @@
 
 
 
+  /**
+   * Mark a message read in the real mailbox.
+   *
+   * The unread flag is not ours — it lives in Gmail, and every count on this
+   * page derives from it — so this writes there first and only then updates
+   * what is on screen. Failing halfway would otherwise leave the page saying
+   * "read" about a message that is still bold in the inbox.
+   */
+  function markRead(bridge, id, btn) {
+    if (!id || !bridge.markRead) return
+    btn.disabled = true
+    var was = btn.textContent
+    btn.textContent = '…'
+    bridge
+      .markRead([id])
+      .then(function (res) {
+        if (!res || !res.ok) {
+          btn.disabled = false
+          btn.textContent = was
+          setStatus((res && res.error) || 'Could not mark that read', 'warn')
+          return
+        }
+        ;(lastData.mail || []).forEach(function (m) {
+          if (m.id === id) m.unread = false
+        })
+        renderDaily(lastData.mail, false, [])
+        renderInbox(lastData.mail)
+        renderStats(lastData.events, lastData.mail)
+        refreshTabCounts()
+        setStatus(res.mock ? 'Sample data — nothing was changed in Gmail' : 'Marked read in Gmail',
+          res.mock ? 'mock' : 'ok')
+      })
+      .catch(function (err) {
+        btn.disabled = false
+        btn.textContent = was
+        setStatus((err && err.message) || 'Could not mark that read', 'warn')
+      })
+  }
+
   // ---- automatic drafts ---------------------------------------------------
 
   /**
@@ -1927,6 +1868,7 @@
     try {
       renderDaily(lastData.mail, false, [])
       renderCalendar(lastData.events)
+      renderOnePage(lastData.events, lastData.mail)
       if (bridge) renderMonitor(bridge)
       renderStats(lastData.events, lastData.mail)
       applyFilterToStaticRows()
@@ -1964,12 +1906,59 @@
    * The API the app's top bar drives. Same-origin, so the parent calls these
    * directly rather than posting messages — one less protocol to keep in step.
    */
+  /**
+   * The tab row, as data. The app's top bar draws it, so it needs the labels
+   * and counts that the in-frame buttons carry — reading them off the buttons
+   * themselves keeps one source of truth, including for tabs the sweep writes
+   * that this file has never heard of.
+   */
+  function tabList() {
+    var out = []
+    Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (btn) {
+      var key = btn.dataset.panel
+      if (!key) return
+      var count = btn.querySelector('.count')
+      out.push({
+        key: key,
+        label: btn.textContent.replace(count ? count.textContent : '', '').trim(),
+        count: count ? count.textContent.trim() : '',
+        active: btn.getAttribute('aria-selected') === 'true',
+        title: btn.title || '',
+      })
+    })
+    return out
+  }
+
+  function selectTab(key) {
+    if (typeof switchTab !== 'function') return
+    switchTab(key)
+    activeTab = key
+    renderStats(lastData.events, lastData.mail)
+  }
+
+  /**
+   * With the app drawing the tabs, the in-frame row is a second copy of the
+   * same control — and two rows that can disagree is worse than either.
+   */
+  function hideOwnTabs() {
+    try {
+      if (!window.parent || window.parent === window) return
+    } catch (e) {
+      return
+    }
+    var nav = document.querySelector('.masthead .tabs')
+    if (nav) nav.style.display = 'none'
+  }
+
   function publishDigestApi() {
     window.__nexusDigest = {
-      version: 1,
+      // 2: adds tabs()/selectTab().
+      version: 2,
       setFilters: setFilters,
       getFilters: function () { return activeFilters.slice() },
       categoryCounts: categoryCounts,
+      tabs: tabList,
+      selectTab: selectTab,
       sync: function () {
         var bridge = getBridge()
         if (bridge) sync(bridge)
@@ -2039,7 +2028,23 @@
     }
   }
 
-  function closeItem(bridge, id, el) {
+  /**
+   * Closed is not completed. "I did this" and "this never needed doing" both
+   * take the item off the list, but only one of them is an accomplishment —
+   * and when you come back to a closed item, which of the two it was is the
+   * whole question. Both set `done`, since that is what every count and every
+   * renderer already reads; `dismissed` records which door it went out of.
+   */
+  function isDismissed(id) {
+    try {
+      var e = STATE.punchlist[id]
+      return !!(e && e.done && e.dismissed)
+    } catch (err) {
+      return false
+    }
+  }
+
+  function closeItem(bridge, id, el, dismissed) {
     try {
       var entry = STATE.punchlist[id]
       if (!entry) {
@@ -2057,6 +2062,7 @@
         }
       }
       entry.done = true
+      entry.dismissed = !!dismissed
       entry.doneAt = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       entry.doneTs = new Date().toISOString()
       // Record the conversation so a later reply can find its way back here.
@@ -2067,7 +2073,7 @@
       applyClosed()
       renderMonitor(bridge)
       renderStats(lastData.events, lastData.mail)
-      renderTopActions(bridge)
+      renderTopActions()
       refreshTabCounts()
     } catch (err) {}
   }
@@ -2099,14 +2105,22 @@
         var btn = el('button', 'close-btn', '✓')
         btn.type = 'button'
         btn.dataset.closeId = id
-        btn.title = 'Done or not applicable — close this and stop it coming back'
+        btn.title = 'Done — take this off the list'
+        // Two doors, because they mean different things when you come back:
+        // ✓ is "I did it", ✕ is "this never needed doing".
+        var x = el('button', 'close-btn dismiss-btn', '✕')
+        x.type = 'button'
+        x.dataset.closeId = id
+        x.title = 'Not needed — close this without marking it done'
         var host = row.querySelector('.cat-links, .qa-strip, .cat-main') || row
         if (row.tagName === 'TR') {
           var td = document.createElement('td')
           td.appendChild(btn)
+          td.appendChild(x)
           row.appendChild(td)
         } else {
           host.appendChild(btn)
+          host.appendChild(x)
         }
       }
       row.classList.toggle('is-closed', isClosed(id))
@@ -2140,6 +2154,7 @@
     dailyPanel = el('div', 'panel')
     dailyPanel.id = 'panel-daily'
     dailyPanel.innerHTML =
+      '<section id="mail-counts"></section>' +
       '<section id="mail-since"></section><section id="mail-24h"></section>'
     main.appendChild(dailyPanel)
     panels.daily = dailyPanel
@@ -2246,7 +2261,153 @@
     var count = document.getElementById('daily-tab-count')
     if (count) count.textContent = since.length || day.length
 
+    renderInbox(items)
     rewirePage()
+  }
+
+
+  // ---- the inbox section: what arrived, and how much of it ----------------
+
+  /**
+   * Two windows, because they answer different questions: 24 hours is "what
+   * landed while I was away", 7 days is "is this week heavier than usual".
+   */
+  var INBOX_WINDOWS = [
+    { key: 'h24', hours: 24, label: 'Last 24 hours' },
+    { key: 'd7', hours: 24 * 7, label: 'Last 7 days' },
+  ]
+
+  /**
+   * Totals counted by Gmail itself, per window.
+   *
+   * The page holds a RANKED SAMPLE of mail — twenty or so messages scored out
+   * of a wider candidate pool — so counting arrivals from it would report the
+   * size of the sample, not of the inbox. Gmail can answer "how many, how many
+   * unread" for a search in two cheap requests, so the totals come from there
+   * and only the breakdowns, which need per-message data, come from the sample.
+   */
+  var mailboxCounts = {}
+
+  function refreshMailboxCounts(bridge) {
+    if (!bridge || !bridge.mailCounts) return
+    INBOX_WINDOWS.forEach(function (w) {
+      bridge
+        .mailCounts(w.hours)
+        .then(function (res) {
+          if (!res || res.error) return
+          mailboxCounts[w.key] = res
+          renderInbox(lastData.mail)
+        })
+        .catch(function () {})
+    })
+  }
+
+  function urgentMail(items) {
+    return items.filter(function (m) {
+      var sev = mailSeverity(m.score)
+      return sev === 'critical' || sev === 'high'
+    })
+  }
+
+  function inboxWindowHtml(w, mail) {
+    var since = Date.now() - w.hours * 3600000
+    var pool = (mail || []).filter(mailPasses).filter(function (m) {
+      var t = new Date(m.date).getTime()
+      return isFinite(t) && t >= since
+    })
+    var counted = mailboxCounts[w.key]
+    var urgent = urgentMail(pool)
+
+    var cats = {}
+    pool.forEach(function (m) {
+      var c = inferMailCategory(m)
+      cats[c] = (cats[c] || 0) + 1
+    })
+    var keys = Object.keys(cats).sort(function (a, b) { return cats[b] - cats[a] })
+
+    // When Gmail has answered, its numbers are the arrivals and the unread
+    // count; otherwise say the sample is what is being counted rather than
+    // presenting a sample total as an inbox total.
+    var arrived = counted ? counted.total : pool.length
+    var unread = counted ? counted.unread : pool.filter(function (m) { return m.unread }).length
+    // Two different bases in one card, so say which is which rather than
+    // stamping one source over the whole thing: arrivals and unread are the
+    // mailbox's own numbers, urgency and category can only come from the
+    // messages this page actually scored.
+    var source = counted
+      ? 'arrivals from Gmail · the rest from the ' + pool.length + ' ranked here'
+      : 'all from the ' + pool.length + ' ranked here'
+    var ranked = ' of ' + pool.length + ' ranked'
+
+    return '<div class="inbox-win">' +
+      '<div class="inbox-win__head">' + esc(w.label) +
+      '<span class="inbox-win__src">' + esc(source) + '</span></div>' +
+      '<div class="inbox-nums">' +
+      statHtml(arrived, '✉️ Arrived') +
+      statHtml(unread, '● Unread', unread ? 'var(--high)' : '') +
+      statHtml(urgent.length, '🔴 Urgent' + (counted ? ranked : ''),
+        urgent.length ? 'var(--critical)' : '') +
+      '</div>' +
+      (keys.length
+        ? '<div class="inbox-cats">' + keys.map(function (c) {
+            var meta = CATEGORY_META[c] || { icon: '📧', label: c }
+            return '<span class="inbox-cat glance--' + esc(c) + '">' +
+              meta.icon + ' ' + esc(meta.label) +
+              '<b class="mono">' + cats[c] + '</b></span>'
+          }).join('') + '</div>'
+        : '<p class="note">Nothing in this window.</p>') +
+      '</div>'
+  }
+
+  /**
+   * Mail that arrived since the last time this browser opened the digest,
+   * grouped by category — the list that answers "what did I miss", which a
+   * rolling window cannot.
+   */
+  function sinceLoginHtml(mail) {
+    var pool = (mail || []).filter(mailPasses).filter(function (m) {
+      return previousVisit && new Date(m.date).getTime() > previousVisit
+    })
+    pool.sort(function (a, b) { return b.date.localeCompare(a.date) })
+
+    var when = previousVisit
+      ? new Date(previousVisit).toLocaleDateString('en-US', {
+          weekday: 'short', month: 'short', day: 'numeric',
+        }) + ' · ' + new Date(previousVisit).toLocaleTimeString('en-US', {
+          hour: 'numeric', minute: '2-digit',
+        })
+      : ''
+
+    return '<div class="section-head"><h3>🆕 Since your last login</h3>' +
+      '<span class="sub">' +
+      (previousVisit
+        ? 'Arrived after ' + esc(when) + ' · grouped by category · 📖 marks one read in Gmail'
+        : 'First visit on this browser — nothing to compare against yet') +
+      '</span></div>' +
+      (pool.length
+        ? categoryBandsHtml(pool, false, [])
+        : '<p class="note">' +
+          (previousVisit ? 'Nothing new since you were last here.'
+            : 'Come back and this will show what arrived while you were away.') +
+          '</p>')
+  }
+
+  function inboxHtml(mail, withList) {
+    return '<div class="section-head"><h2>📥 Inbox</h2>' +
+      '<span class="sub">How much arrived, how much of it is still unread, and where it came from</span></div>' +
+      '<div class="inbox-wins">' +
+      INBOX_WINDOWS.map(function (w) { return inboxWindowHtml(w, mail) }).join('') +
+      '</div>' +
+      (withList ? sinceLoginHtml(mail) : '')
+  }
+
+  /** Paint the inbox wherever it is hosted — the one-page view, the mail tab. */
+  function renderInbox(mail) {
+    var full = document.getElementById('inbox-slot')
+    if (full) full.innerHTML = inboxHtml(mail, true)
+    var counts = document.getElementById('mail-counts')
+    if (counts) counts.innerHTML = inboxHtml(mail, false)
+    if (full || counts) rewirePage()
   }
 
   // ---- Top actions, ranked by deadline ------------------------------------
@@ -2269,6 +2430,34 @@
   // ---- Calendar tab -------------------------------------------------------
 
   var CAL_LOOKAHEAD_DAYS = 14
+
+  /**
+   * Sweep-written markup the calendar tab reuses — the logistics rows and the
+   * prep table. Both are MOVED into whichever section is showing, so they must
+   * be held onto rather than re-queried: `host.innerHTML = …` on a section
+   * change would otherwise destroy them, and leaving Suggested planning once
+   * would empty it for good.
+   */
+  var salvaged = { logi: null, prep: null }
+
+  function salvageCalendarParts() {
+    if (!salvaged.logi) {
+      var wrap = document.querySelector('.logi-wrap')
+      if (wrap) {
+        var sec = wrap.closest('section')
+        if (sec) sec.style.display = 'none'
+        salvaged.logi = wrap
+      }
+    }
+    if (!salvaged.prep) {
+      var body = document.getElementById('prep-tbody')
+      var prepSec = body && body.closest('section')
+      if (prepSec) salvaged.prep = prepSec
+    }
+    // Detached so the next innerHTML wipe cannot take them with it.
+    if (salvaged.logi && salvaged.logi.parentNode) salvaged.logi.remove()
+    if (salvaged.prep && salvaged.prep.parentNode) salvaged.prep.remove()
+  }
 
   function dismissedPrep() {
     own.prepOut = own.prepOut || {}
@@ -2334,7 +2523,10 @@
         td.appendChild(x)
         tr.appendChild(td)
       }
-      cb.addEventListener('change', renderPrepTotals)
+      if (!cb.dataset.prepWired) {
+        cb.dataset.prepWired = '1'
+        cb.addEventListener('change', renderPrepTotals)
+      }
     })
 
     var head = document.querySelector('#panel-calendar thead tr')
@@ -2442,23 +2634,28 @@
       ? future.filter(function (ev) { return eventCategory(ev) === calCatFilter })
       : future
 
+    // Take the sweep's prep and logistics markup out of the page before the
+    // wipe below, so a section change cannot destroy it.
+    salvageCalendarParts()
+
     var body
     if (calSection === 'deadlines') body = keyDatesHtml(events) + deadlinesHtml(picked)
     else if (calSection === 'meetings') body = meetingsHtml(picked)
     else if (calSection === 'load') body = loadHtml(picked)
-    else body = '<div class="section-head"><h2>🚗 Logistics</h2>' +
-      '<span class="sub">Where you need to be, still ahead · drive times pulled out</span></div>' +
-      '<div id="logi-slot"></div>'
+    else body = planningHtml(picked)
 
     host.innerHTML = calNavHtml() + body
 
-    // Logistics is sweep-written markup living elsewhere on the page; move it
-    // into the section rather than duplicating it.
+    // Prep and logistics are sweep-written markup; move them into the section
+    // rather than duplicating them.
+    var prepSlot = document.getElementById('prep-slot')
+    if (prepSlot && salvaged.prep) {
+      prepSlot.appendChild(salvaged.prep)
+      salvaged.prep.style.display = ''
+      wirePrepBlocks()
+    }
     var logiSlot = document.getElementById('logi-slot')
-    var logiWrap = document.querySelector('.logi-wrap')
-    if (logiSlot && logiWrap) logiSlot.appendChild(logiWrap)
-    var logiSection = logiWrap && logiWrap.closest('section')
-    if (logiSection && logiSection !== host) logiSection.style.display = 'none'
+    if (logiSlot && salvaged.logi) logiSlot.appendChild(salvaged.logi)
     trimLogistics()
 
     if (!host.dataset.picker) {
@@ -2613,7 +2810,10 @@
    * a muted line, so it is pulled out.
    */
   function trimLogistics() {
-    var rows = document.querySelectorAll('.logi-row')
+    // The wrap is detached whenever another calendar section is showing, so a
+    // document-wide query would find nothing and silently skip the trim.
+    var scope = salvaged.logi || document
+    var rows = scope.querySelectorAll('.logi-row')
     if (!rows.length) return
     Array.prototype.forEach.call(rows, function (row) {
       var dayEl = row.querySelector('.logi-day')
@@ -2643,9 +2843,9 @@
       main.parentNode.insertBefore(chip, main.nextSibling)
     })
 
-    var wrap = document.querySelector('.logi-wrap')
+    var wrap = salvaged.logi || document.querySelector('.logi-wrap')
     var anyLeft = Array.prototype.some.call(
-      document.querySelectorAll('.logi-row'),
+      scope.querySelectorAll('.logi-row'),
       function (r) { return r.style.display !== 'none' },
     )
     if (wrap && !anyLeft) {
@@ -2818,7 +3018,7 @@
   var CAL_SECTIONS = [
     { key: 'deadlines', label: '⏱️ Deadlines' },
     { key: 'meetings', label: '🤝 Meetings' },
-    { key: 'logistics', label: '🚗 Logistics' },
+    { key: 'planning', label: '🧭 Suggested planning' },
     { key: 'load', label: '⚖️ Load balancing' },
   ]
   var calSection = 'deadlines'
@@ -2874,9 +3074,283 @@
     return weekAheadHtml(future)
   }
 
+  // ---- suggested planning: prep blocks and the travel they imply ----------
+
+  /**
+   * A meeting with an address is really two commitments: the meeting, and
+   * getting there. Only one of them is on the calendar, which is why the day
+   * that looked fine at 9am is late by 10. So every located event gets a
+   * proposed travel block on each side of it, with a leave-by time you can put
+   * on the calendar in one click.
+   *
+   * Nothing here writes to your calendar. Each block opens Google's own event
+   * composer, prefilled — the decision stays yours, and no write scope is
+   * asked for.
+   */
+  var DEFAULT_DRIVE_MIN = 20
+  /** A location that is a link or a phone bridge is not somewhere you drive. */
+  var VIRTUAL_RE = /(^https?:)|zoom|meet\.google|teams\.microsoft|webex|hangout|phone|dial-?in|call|online|virtual|tbd/i
+
+  function isTravelWorthy(ev) {
+    if (ev.allDay) return false
+    var loc = String(ev.location || '').trim()
+    if (loc.length < 4) return false
+    if (VIRTUAL_RE.test(loc)) return false
+    return true
+  }
+
+  /**
+   * Drive times the sweep already measured, keyed by the destination text it
+   * wrote them against. A real number beats an estimate, so the logistics rows
+   * are read for one before falling back.
+   */
+  function knownDriveTimes() {
+    var out = []
+    var wrap = salvaged.logi || document.querySelector('.logi-wrap')
+    if (!wrap) return out
+    Array.prototype.forEach.call(wrap.querySelectorAll('.logi-row'), function (row) {
+      var addr = row.querySelector('.logi-addr')
+      if (!addr) return
+      var m = /~?\s*(\d+)\s*(min|minutes|hr|hour|hours)\b/i.exec(addr.textContent)
+      if (!m) return
+      var mins = parseInt(m[1], 10)
+      if (/hr|hour/i.test(m[2])) mins *= 60
+      out.push({ text: row.textContent.toLowerCase(), mins: mins })
+    })
+    return out
+  }
+
+  function driveMinutes(ev, known) {
+    var loc = String(ev.location || '').toLowerCase()
+    var title = String(ev.title || '').toLowerCase()
+    for (var i = 0; i < known.length; i++) {
+      var probe = loc.slice(0, 14)
+      if (probe && known[i].text.indexOf(probe) !== -1) {
+        return { mins: known[i].mins, measured: true }
+      }
+      var t = title.slice(0, 14)
+      if (t && known[i].text.indexOf(t) !== -1) {
+        return { mins: known[i].mins, measured: true }
+      }
+    }
+    return { mins: DEFAULT_DRIVE_MIN, measured: false }
+  }
+
+  function gcalStamp(d) {
+    return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+  }
+
+  /** A prefilled Google Calendar composer — the user still presses save. */
+  function gcalTemplate(title, from, to, location, details) {
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE' +
+      '&text=' + encodeURIComponent(title) +
+      '&dates=' + gcalStamp(from) + '/' + gcalStamp(to) +
+      (location ? '&location=' + encodeURIComponent(location) : '') +
+      (details ? '&details=' + encodeURIComponent(details) : '')
+  }
+
+  function travelBlocks(events) {
+    var known = knownDriveTimes()
+    var now = Date.now()
+    var out = []
+    ;(events || []).forEach(function (ev) {
+      if (!isTravelWorthy(ev)) return
+      var start = new Date(ev.start)
+      var end = new Date(ev.end || ev.start)
+      if (isNaN(start.getTime())) return
+      if (start.getTime() < now) return
+      var d = driveMinutes(ev, known)
+      var ms = d.mins * 60000
+
+      out.push({
+        when: new Date(start.getTime() - ms),
+        until: start,
+        mins: d.mins,
+        measured: d.measured,
+        dir: 'to',
+        event: ev,
+      })
+      if (!isNaN(end.getTime()) && end.getTime() > start.getTime()) {
+        out.push({
+          when: end,
+          until: new Date(end.getTime() + ms),
+          mins: d.mins,
+          measured: d.measured,
+          dir: 'from',
+          event: ev,
+        })
+      }
+    })
+    out.sort(function (a, b) { return a.when - b.when })
+    return out
+  }
+
+  function travelRowHtml(b) {
+    var ev = b.event
+    var title = (b.dir === 'to' ? 'Drive to ' : 'Drive home from ') + (ev.title || 'event')
+    var href = gcalTemplate(
+      '🚗 ' + title,
+      b.when,
+      b.until,
+      ev.location || '',
+      (b.measured ? 'Measured' : 'Estimated') + ' ' + b.mins + ' minutes each way · ' +
+        'suggested by the Nexus daily digest',
+    )
+    return '<div class="plan-row">' +
+      '<span class="plan-when mono">' + esc(timeLabel(b.when.toISOString(), false)) + '</span>' +
+      '<span class="plan-drive"><b class="mono">' + b.mins + '</b><span class="plan-drive__u">min</span></span>' +
+      '<span class="plan-main">' +
+      '<span class="plan-title">' + esc(title) + '</span>' +
+      '<span class="plan-meta">' + esc(ev.location || '') +
+      ' · ' + (b.measured ? 'measured drive' : 'estimated drive') +
+      ' · leave by ' + esc(timeLabel(b.when.toISOString(), false)) + '</span>' +
+      '</span>' +
+      '<a class="plan-add" href="' + esc(href) + '" target="_blank" rel="noopener"' +
+      ' title="Open Google Calendar with this block prefilled">＋ Add</a>' +
+      '</div>'
+  }
+
+  /**
+   * Prep blocks and travel blocks are the same kind of thing — time the week
+   * needs that is not yet on the calendar — so they share one section rather
+   * than being a suggestion list and a logistics list you have to reconcile.
+   */
+  /**
+   * Travel alone, with no slots for the sweep's markup. The prep table and the
+   * logistics rows are MOVED rather than copied — one DOM node cannot be in
+   * two panels — so the one-page view shows the derived half and leaves the
+   * swept half to the Calendar tab.
+   */
+  function travelHtml(future) {
+    var blocks = travelBlocks(future)
+    return '<div class="section-head"><h3>🚗 Travel blocks</h3>' +
+      '<span class="sub">' +
+      (blocks.length
+        ? blocks.length + ' drive' + (blocks.length === 1 ? '' : 's') +
+          ' implied by events with an address, ' + DEFAULT_DRIVE_MIN +
+          ' min assumed where no measured time exists'
+        : 'No upcoming event carries an address to drive to') +
+      '</span></div>' +
+      (blocks.length
+        ? '<div class="plan-list">' + blocks.map(travelRowHtml).join('') + '</div>'
+        : '')
+  }
+
+  function planningHtml(future) {
+    return '<div class="section-head"><h2>🧭 Suggested planning</h2>' +
+      '<span class="sub">Prep and travel the week implies but has not been scheduled · ' +
+      '＋ opens Google Calendar prefilled — nothing is written for you</span></div>' +
+      '<div id="prep-slot"></div>' +
+      travelHtml(future) +
+      '<div class="section-head"><h3>📍 Logged stops</h3>' +
+      '<span class="sub">Where you need to be, still ahead · drive times pulled out</span></div>' +
+      '<div id="logi-slot"></div>'
+  }
+
   /** Load balancing: where the hours actually go. */
   function loadHtml(future) {
     return calSelectorHtml(future) + hoursDashboardHtml(future)
+  }
+
+  // ---- the one-page dashboard ---------------------------------------------
+
+  /**
+   * Everything on one page, in the order you actually ask it: the calendar
+   * first, because the day is already committed before any of the mail is
+   * read, then the inbox.
+   *
+   * The calendar half is the same four views the Calendar tab offers, folded
+   * into disclosures rather than a section picker — on a page you scroll, a
+   * picker means the other three are invisible, and the point of a one-page
+   * view is that nothing is.
+   */
+  var onePagePanel = null
+  var OPEN_SECS_KEY = 'ak-digest-onepage-open'
+
+  function openSections() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(OPEN_SECS_KEY) || 'null')
+      if (Array.isArray(raw)) return raw
+    } catch (e) {}
+    return ['deadlines']
+  }
+
+  function rememberSection(key, open) {
+    var list = openSections().filter(function (k) { return k !== key })
+    if (open) list.push(key)
+    try {
+      localStorage.setItem(OPEN_SECS_KEY, JSON.stringify(list))
+    } catch (e) {}
+  }
+
+  function opSection(key, label, body) {
+    return '<details class="op-sec" data-op="' + esc(key) + '"' +
+      (openSections().indexOf(key) !== -1 ? ' open' : '') + '>' +
+      '<summary class="op-sec__head">' + label + '</summary>' +
+      '<div class="op-sec__body">' + body + '</div></details>'
+  }
+
+  function buildOnePageTab(bridge) {
+    if (onePagePanel) return
+    var main = document.querySelector('main')
+    var nav = document.querySelector('.masthead .tabs')
+    if (!main || !nav || typeof panels !== 'object' || !panels) return
+
+    onePagePanel = el('div', 'panel')
+    onePagePanel.id = 'panel-onepage'
+    onePagePanel.innerHTML =
+      '<section id="onepage-cal" class="no-check"></section>' +
+      '<section id="inbox-slot"></section>'
+    main.appendChild(onePagePanel)
+    panels.onepage = onePagePanel
+
+    var btn = el('button', 'tab-btn')
+    btn.type = 'button'
+    btn.setAttribute('role', 'tab')
+    btn.dataset.panel = 'onepage'
+    btn.setAttribute('aria-selected', 'false')
+    btn.innerHTML = '🧾 One page <span class="count mono" id="onepage-tab-count">0</span>'
+    btn.addEventListener('click', function () {
+      if (typeof switchTab === 'function') switchTab('onepage')
+    })
+    // Last: it is a view OF the other tabs, so it reads as the summary at the
+    // end of the row rather than the thing you land on.
+    nav.appendChild(btn)
+
+    // Remember which disclosures were open, so returning to the page does not
+    // fold everything back up.
+    onePagePanel.addEventListener('toggle', function (e) {
+      var sec = e.target.closest('.op-sec')
+      if (sec) rememberSection(sec.dataset.op, sec.open)
+    }, true)
+  }
+
+  function renderOnePage(events, mail) {
+    if (!onePagePanel) return
+    var now = Date.now()
+    var horizon = now + CAL_LOOKAHEAD_DAYS * 86400000
+    var future = (events || []).filter(function (ev) {
+      var t = new Date(ev.start).getTime()
+      return isFinite(t) && t >= now && t <= horizon && eventPasses(ev)
+    })
+
+    document.getElementById('onepage-cal').innerHTML =
+      '<div class="section-head"><h2>📅 Calendar</h2>' +
+      '<span class="sub">The next ' + CAL_LOOKAHEAD_DAYS +
+      ' days · open any section for the detail the Calendar tab shows</span></div>' +
+      keyDatesHtml(events) +
+      opSection('deadlines', '⏱️ Deadlines', deadlinesHtml(future)) +
+      opSection('meetings', '🤝 Meetings', meetingsHtml(future)) +
+      opSection('planning', '🧭 Suggested planning', travelHtml(future)) +
+      // The load view without its category picker: that picker drives the
+      // Calendar tab's own render, and a second copy here would move a
+      // selection the reader cannot see.
+      opSection('load', '⚖️ Load balancing', hoursDashboardHtml(future))
+
+    renderInbox(mail)
+
+    var count = document.getElementById('onepage-tab-count')
+    if (count) count.textContent = future.length
   }
 
   // ---- Monitor tab: filters, thread timelines, history --------------------
@@ -2884,6 +3358,7 @@
   var STATUS_FILTERS = [
     ['', 'Any status'],
     ['done', '✅ Completed'],
+    ['closed', '🚫 Closed — not needed'],
     ['waiting', '⏳ Waiting on reply'],
     ['court', '➡️ In their court'],
     ['fwd', '📤 Forwarded'],
@@ -2893,72 +3368,19 @@
   var STATUS_SET_OPTS = [
     ['court', '➡️ In my court'],
     ['done', '✅ Completed'],
+    ['closed', '🚫 Closed — not needed'],
     ['waiting', '⏳ Waiting on reply'],
     ['fwd', '📤 Forwarded'],
     ['remind', '⏰ Reminder set'],
   ]
   var DONE_FILTERS = [
     ['open', 'Open only'],
-    ['done', 'Completed only'],
-    ['all', 'Open + completed'],
+    ['done', 'Completed or closed'],
+    ['all', 'Everything'],
   ]
 
   var monitorPanel = null
   var threadCache = {}
-  /** Selected category filter; '' means all. Driven by the icon tiles. */
-  var catFilter = ''
-
-  /**
-   * Category as clickable icon tiles rather than a dropdown. The set is small
-   * and fixed, and each one carries a colour already — so showing them all at
-   * once, with counts, turns "filter by category" into one click and doubles
-   * as a read on where the work actually is.
-   */
-  function buildCategoryTiles(bridge) {
-    var host = monitorPanel.querySelector('.mon-cats')
-    if (!host) return
-    host.innerHTML =
-      '<button type="button" class="cat-tile cat-tile--all" data-cat="">' +
-      '<span class="cat-tile__icon">🗂️</span><span class="cat-tile__name">All</span>' +
-      '<span class="cat-tile__n mono"></span></button>' +
-      CATEGORY_OPTS.map(function (pair) {
-        var meta = CATEGORY_META[pair[0]] || { icon: '📧', label: pair[1] }
-        return '<button type="button" class="cat-tile cat-' + esc(pair[0]) +
-          '" data-cat="' + esc(pair[0]) + '">' +
-          '<span class="cat-tile__icon">' + meta.icon + '</span>' +
-          '<span class="cat-tile__name">' + esc(meta.label) + '</span>' +
-          '<span class="cat-tile__n mono"></span></button>'
-      }).join('')
-    host.addEventListener('click', function (e) {
-      var tile = e.target.closest('.cat-tile')
-      if (!tile) return
-      // Clicking the selected one clears it, so the tiles are a toggle.
-      catFilter = tile.dataset.cat === catFilter ? '' : tile.dataset.cat
-      paintCategoryTiles()
-      renderMonitor(bridge)
-    })
-    paintCategoryTiles()
-  }
-
-  function paintCategoryTiles() {
-    if (!monitorPanel) return
-    var counts = {}
-    var all = 0
-    try {
-      Object.keys(STATE.punchlist || {}).forEach(function (id) {
-        var e = STATE.punchlist[id]
-        if (!e || e.done) return
-        all++
-        counts[e.category] = (counts[e.category] || 0) + 1
-      })
-    } catch (err) {}
-    Array.prototype.forEach.call(monitorPanel.querySelectorAll('.cat-tile'), function (tile) {
-      var c = tile.dataset.cat
-      tile.classList.toggle('is-on', c === catFilter)
-      var n = tile.querySelector('.cat-tile__n')
-      if (n) n.textContent = c ? (counts[c] || 0) : all
-    })
-  }
 
   /**
    * Register a sixth tab on the page's own tab machinery. The page wires its
@@ -2989,15 +3411,12 @@
       '<select class="own-in own-in--sel mon-done">' + optionsHtml(DONE_FILTERS, 'open') + '</select>' +
       '<button type="button" class="live-btn mon-clear">Clear</button>' +
       '</div>' +
-      '<div class="mon-cats"></div>' +
       '<div class="mon-count"></div>' +
       '<div class="mon-results"></div>'
 
     // Above the add-item form and the page's own grouped list.
     var form = document.getElementById('own-form')
     punch.insertBefore(monitorPanel, form || root)
-
-    buildCategoryTiles(bridge)
 
     ;['.mon-q', '.mon-status', '.mon-sev', '.mon-done'].forEach(function (sel) {
       var node = monitorPanel.querySelector(sel)
@@ -3008,8 +3427,6 @@
     monitorPanel.querySelector('.mon-clear').addEventListener('click', function () {
       monitorPanel.querySelector('.mon-q').value = ''
       monitorPanel.querySelector('.mon-status').value = ''
-      catFilter = ''
-      paintCategoryTiles()
       monitorPanel.querySelector('.mon-sev').value = ''
       monitorPanel.querySelector('.mon-done').value = 'open'
       renderMonitor(bridge)
@@ -3020,7 +3437,10 @@
       if (toggle) { loadThread(bridge, toggle.dataset.id, toggle.dataset.email); return }
 
       var done = e.target.closest('.mon-done-btn')
-      if (done) { setDone(bridge, done.dataset.id, done.dataset.state !== 'done'); return }
+      if (done) { setDone(bridge, done.dataset.id, done.dataset.state !== 'done', false); return }
+
+      var shut = e.target.closest('.mon-close-btn')
+      if (shut) { setDone(bridge, shut.dataset.id, true, true); return }
 
       var edit = e.target.closest('.mon-edit')
       if (edit) { editTitle(bridge, edit.dataset.id); return }
@@ -3035,11 +3455,12 @@
   }
 
   /** Completion, status and title edits belong on the tile, not elsewhere. */
-  function setDone(bridge, id, done) {
+  function setDone(bridge, id, done, dismissed) {
     try {
       var e = STATE.punchlist[id]
       if (!e) return
       e.done = !!done
+      e.dismissed = !!(done && dismissed)
       e.doneAt = done
         ? new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : null
@@ -3053,7 +3474,7 @@
       applyClosed()
       renderMonitor(bridge)
       renderStats(lastData.events, lastData.mail)
-      renderTopActions(bridge)
+      renderTopActions()
       refreshTabCounts()
     } catch (err) {}
   }
@@ -3063,8 +3484,9 @@
       // "Completed" is not a forward status — it is the done flag. Routing it
       // through setDone keeps one source of truth for completion, so an item
       // marked complete here also disappears from its band and stops counting.
-      if (value === 'done') { setDone(bridge, id, true); return }
-      if (isClosed(id)) setDone(bridge, id, false)
+      if (value === 'done') { setDone(bridge, id, true, false); return }
+      if (value === 'closed') { setDone(bridge, id, true, true); return }
+      if (isClosed(id)) setDone(bridge, id, false, false)
       if (!STATE.status) STATE.status = {}
       if (value) STATE.status[id] = value
       else delete STATE.status[id]
@@ -3107,6 +3529,7 @@
    * the "waiting on someone" filters meaningful.
    */
   function statusOf(id) {
+    if (isDismissed(id)) return 'closed'
     if (isClosed(id)) return 'done'
     return rawStatus(id) || DEFAULT_STATUS
   }
@@ -3115,19 +3538,14 @@
     if (f.q && String(entry.title || '').toLowerCase().indexOf(f.q) === -1) return false
     if (f.status === 'none' && rawStatus(id)) return false
     if (f.status && f.status !== 'none' && statusOf(id) !== f.status) return false
-    if (f.cat && entry.category !== f.cat) return false
     if (f.sev && entry.severity !== f.sev) return false
+    // Asking for Completed or Closed by status is already asking for items
+    // that are off the list, so the open/done filter must not then hide them —
+    // otherwise picking "🚫 Closed" reliably returns nothing.
+    if (f.status === 'done' || f.status === 'closed') return true
     if (f.done === 'open' && entry.done) return false
     if (f.done === 'done' && !entry.done) return false
     return true
-  }
-
-  function statusLabel(code) {
-    var out = ''
-    STATUS_SET_OPTS.forEach(function (p) {
-      if (p[0] === code && code) out = p[1]
-    })
-    return out
   }
 
   /** The email attached to an item — either one we recorded, or a Gmail link. */
@@ -3148,7 +3566,6 @@
     var f = {
       q: monitorPanel.querySelector('.mon-q').value.trim().toLowerCase(),
       status: monitorPanel.querySelector('.mon-status').value,
-      cat: catFilter,
       sev: monitorPanel.querySelector('.mon-sev').value,
       done: monitorPanel.querySelector('.mon-done').value,
     }
@@ -3168,7 +3585,6 @@
       return d !== 0 ? d : String(b[1].addedAt || '').localeCompare(String(a[1].addedAt || ''))
     })
 
-    paintCategoryTiles()
     var countEl = monitorPanel.querySelector('.mon-count')
     countEl.textContent =
       entries.length + (entries.length === 1 ? ' item' : ' items') + ' match'
@@ -3310,13 +3726,19 @@
       '<div class="mon-tile__actions">' +
       '<button type="button" class="mon-act mon-done-btn" data-id="' + esc(id) + '" data-state="' +
       (e.done ? 'done' : 'open') + '">' + (e.done ? '↺ Reopen' : '✓ Complete') + '</button>' +
+      (e.done ? '' :
+        '<button type="button" class="mon-act mon-close-btn" data-id="' + esc(id) +
+        '" title="Not needed — close this without marking it done">✕ Close</button>') +
       '<button type="button" class="mon-act mon-edit" data-id="' + esc(id) + '">✏️ Edit</button>' +
       '<select class="mon-act mon-status-set" data-id="' + esc(id) + '" title="Forward status">' +
       STATUS_SET_OPTS.map(function (o) {
         return '<option value="' + o[0] + '"' + (o[0] === st ? ' selected' : '') + '>' + esc(o[1]) + '</option>'
       }).join('') +
       '</select>' +
-      (e.done ? '<span class="mon-chip mon-chip--done">done ' + esc(e.doneAt || '') + '</span>' : '') +
+      (e.done
+        ? '<span class="mon-chip mon-chip--done">' +
+          (e.dismissed ? '🚫 closed ' : 'done ') + esc(e.doneAt || '') + '</span>'
+        : '') +
       (own.items[id] ? '<span class="mon-chip">yours</span>' : '') +
       (e.reopenedAt && !e.done
         ? '<span class="mon-chip mon-chip--wait">↩︎ reopened — new reply</span>'
@@ -3423,9 +3845,11 @@
         autoDraft(bridge, mailItems, newMail)
 
         renderDaily(mailItems, mail.mock, newMail)
+        refreshMailboxCounts(bridge)
         rewirePage()
         lastData = { events: eventItems, mail: mailItems }
         renderCalendar(eventItems)
+        renderOnePage(eventItems, mailItems)
         renderMonitor(bridge)
         renderStats(eventItems, mailItems)
         refreshTabCounts()
@@ -3441,11 +3865,7 @@
         syncScrollPadding()
         lastSyncAt = Date.now()
 
-        // Report per-service failures against the service that failed, so a
-        // working inbox is not hidden behind a calendar problem.
-        svcErrors.gmail = mail.error || null
-        svcErrors.calendar = events.error || null
-        renderChips(bridge.status())
+        renderSyncButton(bridge.status())
 
         // Folded into the final status line rather than set here: the
         // success branch below runs after this and would overwrite it.
@@ -3453,12 +3873,26 @@
           ? ' · ↩︎ ' + reopened.length + ' reopened by a reply'
           : ''
 
+        // Report per-service failures against the service that failed, so a
+        // working inbox is not hidden behind a calendar problem — and say
+        // which KIND of failure it is, because that decides what to do about
+        // it: signing in again fixes a refused scope and does nothing at all
+        // for an API that is switched off in Google Cloud.
         var errors = []
         if (mail.error) errors.push('Gmail: ' + mail.error)
         if (events.error) errors.push('Calendar: ' + events.error)
+        var config = [mail.error, events.error].some(function (e) {
+          return e && errorKind(e) === 'config'
+        })
 
         if (errors.length) {
-          setStatus(errors.join(' · '), 'warn')
+          setStatus(
+            errors.join(' · ') +
+              (config
+                ? ' — signing in again will not help; enable the API in Google Cloud, then Sync now'
+                : ' — reconnect from the header to be asked for access again'),
+            'warn',
+          )
         } else if (mock) {
           setStatus(
             'Sample data · ' + syncedAt() + reopenNote +
@@ -3528,7 +3962,7 @@
       // Opened as a standalone file: OAuth lives in the Nexus app, so there is
       // nothing to connect to here. Say so rather than leaving a user who
       // clicked "Open full page" wondering where the live sections went.
-      renderChipsUnavailable()
+      if (syncBtn) syncBtn.hidden = true
       setStatus('Open this page inside Nexus for live Gmail and Calendar data', 'idle')
       if (rangeSel) rangeSel.disabled = true
       if (customDays) customDays.hidden = true
@@ -3542,7 +3976,7 @@
     try {
       if (window.parent && window.parent !== window) {
         window.parent.addEventListener('nexus:google-token', function () {
-          renderChips(bridge.status())
+          renderSyncButton(bridge.status())
           startAutoSync(bridge)
           sync(bridge)
         })
@@ -3572,7 +4006,15 @@
 
     document.addEventListener('click', function (e) {
       var close = e.target.closest('.close-btn')
-      if (close) { closeItem(bridge, close.dataset.closeId, close.closest('[data-check-id]')); return }
+      if (close) {
+        closeItem(
+          bridge,
+          close.dataset.closeId,
+          close.closest('[data-check-id]'),
+          close.classList.contains('dismiss-btn'),
+        )
+        return
+      }
 
       var draft = e.target.closest('.live-draft')
       if (draft) {
@@ -3584,6 +4026,9 @@
         }, draft)
         return
       }
+      var read = e.target.closest('.live-read')
+      if (read) { markRead(bridge, read.dataset.mid, read); return }
+
       var att = e.target.closest('.live-attach')
       if (att) prefillOwnForm(att.dataset.title || '', att.dataset.mid || '')
     })
@@ -3599,7 +4044,8 @@
     })
 
     buildDailyTab(bridge)
-    // After the 24/7 tab exists — renaming a button that has not been built
+    buildOnePageTab(bridge)
+    // After the added tabs exist — renaming a button that has not been built
     // yet silently does nothing.
     retabs()
     buildOwnForm(bridge)
@@ -3609,14 +4055,16 @@
     renderSyncStamp([], [])
     renderStats([], [])
     publishDigestApi()
+    hideOwnTabs()
     wirePrepBlocks()
     renderCalendar([])
+    renderOnePage([], [])
     renderDrafts(bridge)
-    renderTopActions(bridge)
+    renderTopActions()
     watchPunchList(bridge)
 
     var st = bridge.status()
-    renderChips(st)
+    renderSyncButton(st)
 
     if (st.mock || st.gmail || st.calendar) {
       // Sample mode, or at least one service already granted — show data now.

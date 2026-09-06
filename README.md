@@ -7,9 +7,18 @@ with tab-based dashboards of live-feed **widgets** beside it.
 
 The pinned first tab is the [Daily Digest](weekly-briefing/README.md): one
 self-contained page fusing a Gmail sweep and a Google Calendar sweep into a
-punch list, deadline-ranked actions, a category inbox, a 14-day calendar grid,
-draft replies, and a reference vault. Checking any item queues it to the punch
-list, which persists in your browser across weekly rebuilds.
+punch list, an inbox, a 14-day calendar, draft replies, and a reference vault.
+Checking any item queues it to the punch list, which persists in your browser
+across weekly rebuilds; ✓ closes an item as done and ✕ closes it as not needed,
+and both stay reopenable from the punch list.
+
+The app shell owns the two controls that govern the whole page, stacked above
+it: a **category filter** (All, Critical, Personal, Kids, Health, Finances,
+Home, Lifestyle — multi-select, applying to every tab at once) and the digest's
+own **tab row**. Both read the briefing's `window.__nexusDigest` API rather than
+duplicating its state, so a rebuilt page that renames or adds a tab needs no
+change in the shell. The last tab, **One page**, is every view at once —
+calendar first as four disclosures, then the inbox.
 
 It is served verbatim from `public/weekly-briefing.html` and mounted in an
 iframe by `src/components/WeeklyBriefing.tsx`, so its own styles and script stay
@@ -22,14 +31,28 @@ content, so a weekly rebuild does not disturb either:
 - **`theme.css`** restates the briefing's palette tokens as Nexus's, so it
   wears the app's dark theme. The page tokenizes every color, so this is
   variables only — no rule here targets its markup.
-- **`bridge.js`** gives it **live Gmail and Calendar data**. A *Live data* strip
-  under the masthead connects Google and syncs; a **Live inbox** section leads
-  the Actions tab and a **Live calendar** section leads the Calendar tab. Live
-  items are rendered in the page's own markup vocabulary, so they get the same
-  checkbox as swept items and **queue to the punch list identically**.
+- **`bridge.js`** gives it **live Gmail and Calendar data**, and most of the
+  behaviour above. A *Live data* strip under the masthead reports sync state and
+  pulls on demand; Google is connected from the app's header, which is the only
+  place that control exists. Live items are rendered in the page's own markup
+  vocabulary, so they get the same checkbox as swept items and **queue to the
+  punch list identically**.
+
+  It also derives what the calendar implies but does not contain. **Suggested
+  planning** proposes a travel block on each side of every event that carries a
+  real address, using a drive time measured in the sweep's logistics rows where
+  one exists and a flat estimate where none does; each block opens Google's own
+  event composer prefilled, so nothing is ever written to your calendar. The
+  **Inbox** section counts arrivals and unread over 24 hours and 7 days — those
+  totals come from Gmail's own count for the window, not from the ranked sample
+  the page holds, which would report the size of the sample — and breaks the
+  sample down by category beside them. 📖 on a message clears its UNREAD label
+  in the real mailbox; that is the one write in the whole app, so it asks for
+  `gmail.modify` on the click that needs it rather than at connect time.
 
 Live data uses the dashboard's existing Google client: one consent covers
-`gmail.readonly` and `calendar.readonly` together, and the session is shared
+`gmail.readonly` and `calendar.readonly` together (`gmail.modify` is asked for
+separately, and only when you first mark something read), and the session is shared
 with every widget — connect in the briefing and the Gmail tiles are connected
 too. Without a Client ID configured everything runs on sample data, and opened
 as a standalone file the page says so and behaves exactly as it always did.
