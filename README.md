@@ -17,8 +17,15 @@ it: a **category filter** (All, Critical, Personal, Kids, Health, Finances,
 Home, Lifestyle — multi-select, applying to every tab at once) and the digest's
 own **tab row**. Both read the briefing's `window.__nexusDigest` API rather than
 duplicating its state, so a rebuilt page that renames or adds a tab needs no
-change in the shell. The last tab, **One page**, is every view at once —
-calendar first as four disclosures, then the inbox.
+change in the shell. The first tab, **One page**, is where you land and is
+every view at once: the open items, then the calendar as four expandable
+sections, then the inbox — counts, what arrived since your last login, and the
+most recent mail.
+
+"Last login" is a *session*, not a page load. It used to be stamped forward on
+every boot, so reloading the page redefined your last visit as a moment ago and
+emptied the section that answers "what did I miss". The mark now only moves
+after a real absence.
 
 It is served verbatim from `public/weekly-briefing.html` and mounted in an
 iframe by `src/components/WeeklyBriefing.tsx`, so its own styles and script stay

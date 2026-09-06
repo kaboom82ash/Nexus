@@ -492,6 +492,26 @@
     '.rank-title{flex:1;font-size:13px}',
     '.rank-when{color:var(--muted);font-size:11.5px}',
 
+    // One-page items: one line each, severity as the left edge rather than the
+    // whole fill — a full-bleed board here would drown the sections under it.
+    '.op-items{border:1px solid var(--line);border-radius:12px;overflow:hidden;',
+    'margin-bottom:18px}',
+    '.op-item{display:flex;align-items:center;gap:14px;padding:9px 14px;',
+    'background:var(--surface);border-bottom:1px solid var(--line);',
+    'border-left:4px solid var(--line)}',
+    '.op-item:last-child{border-bottom:none}',
+    '.op-item.sev-critical{border-left-color:var(--critical)}',
+    '.op-item.sev-high{border-left-color:var(--high)}',
+    '.op-item.sev-medium{border-left-color:var(--medium)}',
+    '.op-item.sev-low{border-left-color:var(--low)}',
+    '.op-item__due{flex:0 0 52px;font-size:13px;font-weight:700}',
+    '.op-item__t{flex:1;min-width:0;font-size:13px;overflow:hidden;',
+    'text-overflow:ellipsis;white-space:nowrap}',
+    '.op-item__cat{flex:0 0 auto;font-size:11.5px;color:var(--muted)}',
+    '.op-item__st{flex:0 0 auto;font-size:11.5px;color:var(--muted);',
+    'min-width:130px;text-align:right}',
+    '.op-item__more{padding:10px 14px}',
+
     // One-page dashboard: each calendar view a disclosure, so all four are
     // reachable without leaving the page.
     '.op-sec{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;',
@@ -1257,6 +1277,7 @@
         queued = false
         renderStats(lastData.events, lastData.mail)
         renderMonitor(bridge)
+        renderOnePage(lastData.events, lastData.mail)
         renderTopActions()
         refreshTabCounts()
       }, 60)
@@ -1479,7 +1500,11 @@
         }
         addDraft(meta.id, meta, res.text, res.mock)
         renderDrafts(bridge)
-        if (typeof switchTab === 'function') switchTab('drafts')
+        if (typeof switchTab === 'function') {
+          switchTab('drafts')
+          activeTab = 'drafts'
+          renderStats(lastData.events, lastData.mail)
+        }
       })
   }
 
@@ -1912,8 +1937,27 @@
    * themselves keeps one source of truth, including for tabs the sweep writes
    * that this file has never heard of.
    */
+  /**
+   * Which tab is showing, read off the panels rather than the buttons.
+   *
+   * The page sets aria-selected from a NodeList it captured at load, so the
+   * tabs added here — 24/7, One page — never get it, and asking the buttons
+   * would report no selection at all on the tab we now open on.
+   */
+  function activePanelKey() {
+    try {
+      var keys = Object.keys(panels || {})
+      for (var i = 0; i < keys.length; i++) {
+        var node = panels[keys[i]]
+        if (node && getComputedStyle(node).display !== 'none') return keys[i]
+      }
+    } catch (e) {}
+    return activeTab
+  }
+
   function tabList() {
     var out = []
+    var live = activePanelKey()
     Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (btn) {
       var key = btn.dataset.panel
       if (!key) return
@@ -1922,7 +1966,7 @@
         key: key,
         label: btn.textContent.replace(count ? count.textContent : '', '').trim(),
         count: count ? count.textContent.trim() : '',
-        active: btn.getAttribute('aria-selected') === 'true',
+        active: key === live,
         title: btn.title || '',
       })
     })
@@ -1933,7 +1977,18 @@
     if (typeof switchTab !== 'function') return
     switchTab(key)
     activeTab = key
+    // The masthead is sticky and the scroll position survives the switch, so
+    // arriving on a new tab part-way down it — with its first rows behind the
+    // masthead — is the default unless this is done.
+    toTop()
     renderStats(lastData.events, lastData.mail)
+  }
+
+  function toTop() {
+    try {
+      window.scrollTo(0, 0)
+      if (window.parent && window.parent !== window) window.parent.scrollTo(0, 0)
+    } catch (e) {}
   }
 
   /**
@@ -2130,12 +2185,45 @@
   // ---- 24/7 tab: today's mail, and what landed since you were last here ----
 
   var LAST_VISIT_KEY = 'ak-briefing-last-visit'
-  /** Read once at boot: the previous visit, before this one overwrites it. */
+  var LAST_SEEN_KEY = 'ak-briefing-last-seen'
+  /** A gap this long means you went away and came back. */
+  var SESSION_GAP_MS = 2 * 60 * 60 * 1000
+
+  /**
+   * When "last login" was.
+   *
+   * This used to be "the previous page load", stamped forward on every boot —
+   * which meant that reloading the page, or the app remounting the frame,
+   * silently redefined your last visit as a few seconds ago and emptied the
+   * section that answers "what did I miss". It has to be a SESSION, not a
+   * load: the stamp only moves when you have actually been away, and every
+   * load in between keeps pointing at the same moment.
+   */
   var previousVisit = (function () {
-    var raw = readStored(LAST_VISIT_KEY, '')
-    var t = raw ? new Date(raw).getTime() : 0
-    writeStored(LAST_VISIT_KEY, new Date().toISOString())
-    return isFinite(t) && t > 0 ? t : 0
+    var stamp = function (raw) {
+      var t = raw ? new Date(raw).getTime() : 0
+      return isFinite(t) && t > 0 ? t : 0
+    }
+    var visit = stamp(readStored(LAST_VISIT_KEY, ''))
+    var seen = stamp(readStored(LAST_SEEN_KEY, ''))
+    var now = Date.now()
+
+    // A fresh browser: nothing to compare against, and nothing to claim.
+    if (!seen) {
+      writeStored(LAST_VISIT_KEY, new Date(now).toISOString())
+      writeStored(LAST_SEEN_KEY, new Date(now).toISOString())
+      return visit
+    }
+
+    writeStored(LAST_SEEN_KEY, new Date(now).toISOString())
+    if (now - seen > SESSION_GAP_MS) {
+      // Back after a real absence: the last moment you were here becomes the
+      // mark, and everything since it is what you missed.
+      writeStored(LAST_VISIT_KEY, new Date(seen).toISOString())
+      return seen
+    }
+    // Same sitting — a reload, a remount, a tab switch. Keep the mark put.
+    return visit
   })()
 
   var dailyPanel = null
@@ -2392,13 +2480,43 @@
           '</p>')
   }
 
+  /**
+   * The mail itself, newest first.
+   *
+   * "Since your last login" is the section you want and the one that can
+   * legitimately be empty — you may genuinely have missed nothing. An inbox
+   * that then shows no mail at all reads as broken rather than as caught up,
+   * so the recent list always follows it.
+   */
+  function recentMailHtml(mail) {
+    var pool = (mail || []).filter(mailPasses).slice()
+    pool.sort(function (a, b) { return b.date.localeCompare(a.date) })
+
+    var since = previousVisit
+      ? pool.filter(function (m) { return new Date(m.date).getTime() > previousVisit })
+      : []
+    // Do not print the same message twice: whatever the "since" list already
+    // showed is dropped from the recent one.
+    var seen = {}
+    since.forEach(function (m) { seen[m.id] = true })
+    var rest = pool.filter(function (m) { return !seen[m.id] }).slice(0, RECENT_MAIL_MAX)
+
+    if (!rest.length) return ''
+    return '<div class="section-head"><h3>✉️ Recent mail</h3>' +
+      '<span class="sub">The ' + rest.length + ' most recent in the current window · ' +
+      '📖 marks one read in Gmail</span></div>' +
+      categoryBandsHtml(rest, false, [])
+  }
+
+  var RECENT_MAIL_MAX = 12
+
   function inboxHtml(mail, withList) {
     return '<div class="section-head"><h2>📥 Inbox</h2>' +
       '<span class="sub">How much arrived, how much of it is still unread, and where it came from</span></div>' +
       '<div class="inbox-wins">' +
       INBOX_WINDOWS.map(function (w) { return inboxWindowHtml(w, mail) }).join('') +
       '</div>' +
-      (withList ? sinceLoginHtml(mail) : '')
+      (withList ? sinceLoginHtml(mail) + recentMailHtml(mail) : '')
   }
 
   /** Paint the inbox wherever it is hosted — the one-page view, the mail tab. */
@@ -3267,12 +3385,16 @@
   var onePagePanel = null
   var OPEN_SECS_KEY = 'ak-digest-onepage-open'
 
+  var OP_ALL_SECTIONS = ['deadlines', 'meetings', 'planning', 'load']
+
   function openSections() {
     try {
       var raw = JSON.parse(localStorage.getItem(OPEN_SECS_KEY) || 'null')
       if (Array.isArray(raw)) return raw
     } catch (e) {}
-    return ['deadlines']
+    // All of them, until you close one. A page whose detail is behind four
+    // closed disclosures looks like a page with no detail.
+    return OP_ALL_SECTIONS
   }
 
   function rememberSection(key, open) {
@@ -3281,6 +3403,86 @@
     try {
       localStorage.setItem(OPEN_SECS_KEY, JSON.stringify(list))
     } catch (e) {}
+  }
+
+  /**
+   * The punch list, compressed to one line each.
+   *
+   * A one-page dashboard that shows the calendar and the mail but not the work
+   * is missing the thing the other two are usually about. Hardest first, and
+   * within a severity the nearest deadline, which is the order you would work
+   * them in.
+   */
+  var OP_ITEMS_MAX = 15
+  var OP_SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 }
+
+  function onePageItemsHtml() {
+    var rows = []
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done || !entryPasses(e)) return
+        var d = deadlineFrom(e.title)
+        rows.push({
+          id: id,
+          title: e.title,
+          sev: e.severity || 'low',
+          cat: e.category || 'personal',
+          status: statusOf(id),
+          days: d ? d.days : null,
+          href: (e.links && e.links[0] && e.links[0].href) || '',
+        })
+      })
+    } catch (err) {}
+
+    rows.sort(function (a, b) {
+      var d = (OP_SEV_ORDER[a.sev] === undefined ? 9 : OP_SEV_ORDER[a.sev]) -
+        (OP_SEV_ORDER[b.sev] === undefined ? 9 : OP_SEV_ORDER[b.sev])
+      if (d !== 0) return d
+      if (a.days === null && b.days === null) return 0
+      if (a.days === null) return 1
+      if (b.days === null) return -1
+      return a.days - b.days
+    })
+
+    var mine = rows.filter(function (r) { return r.status === 'court' }).length
+    var head = '<div class="section-head"><h2>📋 Items</h2>' +
+      '<span class="sub">' +
+      (rows.length
+        ? rows.length + ' open · ' + mine + ' in your court · hardest first, then by deadline'
+        : 'Nothing open — everything on the punch list is closed') +
+      '</span></div>'
+    if (!rows.length) return head
+
+    return head + '<div class="op-items">' +
+      rows.slice(0, OP_ITEMS_MAX).map(function (r) {
+        var meta = CATEGORY_META[r.cat] || { icon: '📧', label: r.cat }
+        return '<div class="op-item sev-' + esc(r.sev) + '">' +
+          '<span class="op-item__due mono">' +
+          (r.days === null ? '—' : r.days === 0 ? 'today' : r.days + 'd') + '</span>' +
+          '<span class="op-item__t">' +
+          (r.href
+            ? '<a class="mail-link" href="' + esc(r.href) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>'
+            : esc(r.title)) +
+          '</span>' +
+          '<span class="op-item__cat">' + meta.icon + ' ' + esc(meta.label) + '</span>' +
+          '<span class="op-item__st">' + esc(statusText(r.status)) + '</span>' +
+          '</div>'
+      }).join('') +
+      (rows.length > OP_ITEMS_MAX
+        ? '<div class="note op-item__more">+' + (rows.length - OP_ITEMS_MAX) +
+          ' more on the punch list</div>'
+        : '') +
+      '</div>'
+  }
+
+  /** The reader-facing name of a status code. */
+  function statusText(code) {
+    var out = code
+    STATUS_SET_OPTS.forEach(function (pair) {
+      if (pair[0] === code) out = pair[1]
+    })
+    return out
   }
 
   function opSection(key, label, body) {
@@ -3299,6 +3501,7 @@
     onePagePanel = el('div', 'panel')
     onePagePanel.id = 'panel-onepage'
     onePagePanel.innerHTML =
+      '<section id="onepage-items"></section>' +
       '<section id="onepage-cal" class="no-check"></section>' +
       '<section id="inbox-slot"></section>'
     main.appendChild(onePagePanel)
@@ -3309,13 +3512,16 @@
     btn.setAttribute('role', 'tab')
     btn.dataset.panel = 'onepage'
     btn.setAttribute('aria-selected', 'false')
-    btn.innerHTML = '🧾 One page <span class="count mono" id="onepage-tab-count">0</span>'
+    // No count: this tab is every other tab at once, and no single number
+    // says anything true about that.
+    btn.innerHTML = '🧾 One page'
     btn.addEventListener('click', function () {
       if (typeof switchTab === 'function') switchTab('onepage')
     })
-    // Last: it is a view OF the other tabs, so it reads as the summary at the
-    // end of the row rather than the thing you land on.
-    nav.appendChild(btn)
+    // First, and where you land: it is the whole digest on one page, so it is
+    // the answer to "what is going on" — the other tabs are where you go to
+    // work on one part of it.
+    nav.insertBefore(btn, nav.firstChild)
 
     // Remember which disclosures were open, so returning to the page does not
     // fold everything back up.
@@ -3334,6 +3540,8 @@
       return isFinite(t) && t >= now && t <= horizon && eventPasses(ev)
     })
 
+    document.getElementById('onepage-items').innerHTML = onePageItemsHtml()
+
     document.getElementById('onepage-cal').innerHTML =
       '<div class="section-head"><h2>📅 Calendar</h2>' +
       '<span class="sub">The next ' + CAL_LOOKAHEAD_DAYS +
@@ -3348,9 +3556,6 @@
       opSection('load', '⚖️ Load balancing', hoursDashboardHtml(future))
 
     renderInbox(mail)
-
-    var count = document.getElementById('onepage-tab-count')
-    if (count) count.textContent = future.length
   }
 
   // ---- Monitor tab: filters, thread timelines, history --------------------
@@ -4040,6 +4245,7 @@
       var btn = e.target.closest('.tab-btn')
       if (!btn || !btn.dataset.panel) return
       activeTab = btn.dataset.panel
+      toTop()
       renderStats(lastData.events, lastData.mail)
     })
 
@@ -4062,6 +4268,16 @@
     renderDrafts(bridge)
     renderTopActions()
     watchPunchList(bridge)
+
+    // Land on the one-page view: it is the whole digest at once, so it is the
+    // sensible thing to open on. Done after every tab exists, or switchTab
+    // would be asked for a panel that has not been built.
+    try {
+      if (typeof switchTab === 'function') {
+        switchTab('onepage')
+        activeTab = 'onepage'
+      }
+    } catch (e) {}
 
     var st = bridge.status()
     renderSyncButton(st)
