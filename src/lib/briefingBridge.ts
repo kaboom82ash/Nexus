@@ -88,6 +88,8 @@ interface BridgeResult<T> {
   mock: boolean
   /** Human-readable failure; `items` is empty when set. */
   error?: string
+  /** A partial failure: `items` is real but incomplete. */
+  warning?: string
 }
 
 function message(err: unknown, fallback: string): string {
@@ -311,6 +313,7 @@ const bridge: BriefingBridge = {
       const res = await fetchUpcomingEvents({ days, limit })
       return {
         mock: res.mock,
+        ...(res.warning ? { warning: res.warning } : {}),
         items: res.events.map((e) => ({
           id: e.id,
           title: e.title,

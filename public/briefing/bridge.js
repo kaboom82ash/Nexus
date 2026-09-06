@@ -4072,6 +4072,23 @@
 
         renderSyncButton(bridge.status())
 
+        // Tell the app's header which service is failing. A granted scope
+        // whose API still errors is not "connected" in any sense the reader
+        // cares about, and the chip is the only place they can act on it.
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.dispatchEvent(new CustomEvent('nexus:google-service-error', {
+              detail: {
+              gmail: mail.error || '',
+              // A partial read is a problem you must be able to see: the
+              // events on screen are real, and the ones missing look exactly
+              // like a quiet fortnight.
+              calendar: events.error || events.warning || '',
+            },
+            }))
+          }
+        } catch (e) {}
+
         // Folded into the final status line rather than set here: the
         // success branch below runs after this and would overwrite it.
         var reopenNote = reopened.length
@@ -4086,6 +4103,7 @@
         var errors = []
         if (mail.error) errors.push('Gmail: ' + mail.error)
         if (events.error) errors.push('Calendar: ' + events.error)
+        else if (events.warning) errors.push('Calendar: ' + events.warning)
         var config = [mail.error, events.error].some(function (e) {
           return e && errorKind(e) === 'config'
         })

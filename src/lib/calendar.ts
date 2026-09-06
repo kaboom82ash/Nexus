@@ -41,6 +41,12 @@ export interface EventsResult {
   events: CalendarEvent[]
   /** True when these are sample events, not from a real account. */
   mock: boolean
+  /**
+   * Some calendars could not be read, but not all of them. The events here are
+   * real and incomplete — which looks exactly like a quiet fortnight unless it
+   * is said out loud.
+   */
+  warning?: string
 }
 
 /** Whether Calendar access has already been granted this session. */
@@ -281,7 +287,19 @@ export async function fetchUpcomingEvents(
     throw perCalendar[0] as Error
   }
 
+  // A PARTIAL failure is the dangerous one: the call succeeds, some events
+  // come back, and the calendar the user actually lives in is missing with
+  // nothing anywhere to say so. Carry it out instead of swallowing it.
+  const failed = perCalendar.filter((r): r is Error => !Array.isArray(r))
+  const warning = failed.length
+    ? `${failed.length} of ${perCalendar.length} calendars could not be read: ${failed[0].message}`
+    : undefined
+
   const events = ok.flat().sort((a, b) => a.start.localeCompare(b.start))
 
-  return { events: limit ? events.slice(0, limit) : events, mock: false }
+  return {
+    events: limit ? events.slice(0, limit) : events,
+    mock: false,
+    ...(warning ? { warning } : {}),
+  }
 }

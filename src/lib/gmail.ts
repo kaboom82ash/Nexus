@@ -203,8 +203,68 @@ function setScopeToken(scope: string, next: CachedToken | null): void {
   persistTokens()
 }
 
+/**
+ * Which broader scopes answer for which narrower ones.
+ *
+ * Google replies with the access it ACTUALLY granted, and that is not always
+ * the string you asked for: where a broader grant already covers the request,
+ * the response names the broader scope instead. Ask for `gmail.readonly` on an
+ * account that has granted `gmail.modify` — which one press of "mark read"
+ * creates — and the token comes back labelled `gmail.modify`. Compare those as
+ * strings and a successful sign-in reads as a refusal: the chip stays on
+ * "Connect", the user signs in again, Google grants again, nothing changes.
+ * That is a sign-in loop with no error anywhere to explain it.
+ */
+const SCOPE_COVERS: Record<string, string[]> = {
+  'https://mail.google.com/': [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.compose',
+    'https://www.googleapis.com/auth/gmail.labels',
+    'https://www.googleapis.com/auth/gmail.metadata',
+  ],
+  'https://www.googleapis.com/auth/gmail.modify': [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.labels',
+    'https://www.googleapis.com/auth/gmail.metadata',
+  ],
+  'https://www.googleapis.com/auth/calendar': [
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/calendar.events',
+    'https://www.googleapis.com/auth/calendar.events.readonly',
+  ],
+  'https://www.googleapis.com/auth/calendar.events': [
+    'https://www.googleapis.com/auth/calendar.events.readonly',
+  ],
+}
+
+/** Whether holding `granted` gives you everything `asked` would. */
+export function scopeCovers(granted: string, asked: string): boolean {
+  if (granted === asked) return true
+  const parts = granted.split(' ').filter(Boolean)
+  if (parts.length > 1) return parts.some((g) => scopeCovers(g, asked))
+  return (SCOPE_COVERS[granted] ?? []).includes(asked)
+}
+
+/**
+ * The cache key holding a token that satisfies `scope` — itself, or a broader
+ * scope that covers it. Combined (space-separated) requests match exactly
+ * only: they are satisfied per-part by their callers, and handing back one
+ * part's token for the whole set would be a token that does not cover it.
+ */
+function holderFor(scope: string): string | null {
+  if (tokens[scope]) return scope
+  if (scope.indexOf(' ') !== -1) return null
+  for (const held of Object.keys(tokens)) {
+    if (scopeCovers(held, scope)) return held
+  }
+  return null
+}
+
 function validScopeToken(scope: string): string | null {
-  const t = tokens[scope]
+  const key = holderFor(scope)
+  const t = key ? tokens[key] : undefined
   if (t && t.expiresAt - 60_000 > Date.now()) return t.token
   return null
 }
@@ -221,7 +281,7 @@ function validScopeToken(scope: string): string | null {
  * decide whether a cached token is still usable.
  */
 function hasScopeGrant(scope: string): boolean {
-  return !!tokens[scope]
+  return holderFor(scope) !== null
 }
 
 /**
@@ -363,11 +423,14 @@ async function acquireToken(
         const granted = (resp.scope ?? scope).split(' ').filter(Boolean)
         for (const g of granted) setScopeToken(g, { token, expiresAt })
         for (const a of asked) {
-          if (!granted.includes(a)) setScopeToken(a, null)
+          // Covered, not just named: a broader grant answers for a narrower
+          // request, and treating that as a refusal is the loop above.
+          if (!granted.some((g) => scopeCovers(g, a))) setScopeToken(a, null)
+          else if (!tokens[a]) setScopeToken(a, { token, expiresAt })
         }
         // The exact request key is only a valid cache entry if everything it
         // asked for came back; otherwise a repeat request must reach Google.
-        if (asked.length > 1 && asked.every((a) => granted.includes(a))) {
+        if (asked.length > 1 && asked.every((a) => granted.some((g) => scopeCovers(g, a)))) {
           setScopeToken(scope, { token, expiresAt })
         }
         // A grant that landed means the user is not stuck; let them retry

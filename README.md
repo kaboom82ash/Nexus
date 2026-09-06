@@ -57,6 +57,17 @@ content, so a weekly rebuild does not disturb either:
   in the real mailbox; that is the one write in the whole app, so it asks for
   `gmail.modify` on the click that needs it rather than at connect time.
 
+Google reports the access it actually GRANTED, which is not always the scope
+string that was asked for: where a broader grant already covers the request,
+the response names the broader scope — `gmail.modify` answers a
+`gmail.readonly` request, a full `calendar` grant answers `calendar.readonly`.
+`SCOPE_COVERS` in `src/lib/gmail.ts` encodes that, because comparing the two as
+strings makes a successful sign-in read as a refusal and loops the consent
+screen with nothing on screen to explain it. A service chip is also never
+disabled and never shows a tick while its API is failing: a grant can lapse or
+be revoked while the cache still holds it, and a disabled tick beside a service
+returning nothing leaves no way to put it right.
+
 Live data uses the dashboard's existing Google client: one consent covers
 `gmail.readonly` and `calendar.readonly` together (`gmail.modify` is asked for
 separately, and only when you first mark something read), and the session is shared
