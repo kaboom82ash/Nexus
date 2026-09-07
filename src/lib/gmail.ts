@@ -281,7 +281,13 @@ function validScopeToken(scope: string): string | null {
  * decide whether a cached token is still usable.
  */
 function hasScopeGrant(scope: string): boolean {
-  return holderFor(scope) !== null
+  const holder = holderFor(scope)
+  if (!holder) return false
+  // A held token whose renewal Google has just refused is not access. Saying
+  // "connected" here is what kept a dead grant looking alive — the chip showed
+  // a tick, nothing loaded, and there was nothing to press.
+  if (silentFailures[holder] || silentFailures[scope]) return false
+  return true
 }
 
 /**
@@ -321,6 +327,48 @@ function clearPromptLog(scope: string): void {
  * loop, and it hides the one piece of information that would end it.
  */
 const authErrors: Record<string, string> = {}
+
+/**
+ * Silent refreshes that came back refused, and when each scope was last tried.
+ *
+ * A silent refresh is the app asking Google to renew a token with no UI. It
+ * fails when the grant behind it is gone — revoked, expired past renewal, or
+ * signed out elsewhere — and no amount of repeating it will change that. But
+ * nothing here recorded those failures or slowed them down, so a dead grant
+ * was retried by the keep-alive every 45 seconds, on every window focus, and
+ * on every visibility change, for as long as the tab stayed open. From the
+ * user's side that is Google appearing over and over; from the diagnostics'
+ * side it was invisible, because only the interactive path was ever logged.
+ */
+const silentFailures: Record<string, string> = {}
+const silentTried: Record<string, number> = {}
+/** Leave a refused scope alone for this long before trying it again. */
+const SILENT_RETRY_MS = 10 * 60_000
+/**
+ * How far past expiry a token is still worth trying to renew silently. Google
+ * access tokens last about an hour and the grant behind them normally outlives
+ * that by a long way, so a token from this morning renews without any UI — but
+ * one that lapsed a week ago is a reconnect, and pretending otherwise is what
+ * kept the keep-alive running against a dead session.
+ */
+const RENEWABLE_MS = 14 * 24 * 60 * 60_000
+
+function noteSilentFailure(scope: string, message: string): void {
+  silentFailures[scope] = message || 'silent refresh refused'
+  silentTried[scope] = Date.now()
+}
+
+function clearSilentFailure(scope: string): void {
+  delete silentFailures[scope]
+  delete silentTried[scope]
+}
+
+/** Whether a silent retry for this scope is pointless right now. */
+function silentlyRefused(scope: string): boolean {
+  const at = silentTried[scope]
+  if (!at || !silentFailures[scope]) return false
+  return Date.now() - at < SILENT_RETRY_MS
+}
 
 function noteAuthError(scope: string, message: string): void {
   authErrors[scope] = message
@@ -383,6 +431,8 @@ export function authDiagnostics(): Record<string, unknown> {
       ]),
     ),
     lastErrors: { ...authErrors },
+    silentRefreshFailures: { ...silentFailures },
+    keepAliveRunning: keepAliveStarted,
   }
 }
 
@@ -449,19 +499,23 @@ async function requestToken(
     return p
   }
 
-  // Silent path: coalesce concurrent silent refreshes (unless forced).
-  if (!force) {
-    const pending = silentInflight[scope]
-    if (pending) return pending
+  // Silent path. A scope Google has just refused to renew silently will be
+  // refused again; retrying it on every keep-alive tick, focus and visibility
+  // change is the loop this file spent four rounds not finding.
+  if (silentlyRefused(scope)) {
+    return Promise.reject(new NeedsConnectError())
   }
+  // Coalesce concurrent silent refreshes. `force` skips the CACHE, not this:
+  // sharing one in-flight request is always right, and letting the keep-alive
+  // past it was how one dead grant became a request every 45 seconds.
+  const pending = silentInflight[scope]
+  if (pending) return pending
   const p = acquireToken(scope, false)
-  if (!force) {
-    silentInflight[scope] = p
-    const clear = () => {
-      if (silentInflight[scope] === p) silentInflight[scope] = undefined
-    }
-    p.then(clear, clear)
+  silentInflight[scope] = p
+  const clear = () => {
+    if (silentInflight[scope] === p) silentInflight[scope] = undefined
   }
+  p.then(clear, clear)
   return p
 }
 
@@ -490,6 +544,7 @@ async function acquireToken(
             .filter(Boolean)
             .join(': ')
           if (interactive) noteAuthError(scope, detail || 'Authorization failed')
+          else noteSilentFailure(scope, detail || 'silent refresh refused')
           finish(() =>
             reject(interactive ? new Error(detail || 'Authorization failed') : new NeedsConnectError()),
           )
@@ -523,9 +578,11 @@ async function acquireToken(
         if (granted.length) {
           clearPromptLog(scope)
           delete authErrors[scope]
+          clearSilentFailure(scope)
           for (const g of granted) {
             clearPromptLog(g)
             delete authErrors[g]
+            clearSilentFailure(g)
           }
         }
         // Broadcast ONLY on an interactive sign-in so all widgets refresh once
@@ -539,6 +596,7 @@ async function acquireToken(
       error_callback: (err) => {
         const detail = [err?.type, err?.message].filter(Boolean).join(': ')
         if (interactive) noteAuthError(scope, detail || 'Authorization failed')
+        else noteSilentFailure(scope, detail || 'silent refresh refused')
         finish(() =>
           reject(
             interactive
@@ -550,7 +608,11 @@ async function acquireToken(
     })
     const timeoutMs = interactive ? 120_000 : 10_000
     setTimeout(
-      () => finish(() => reject(interactive ? new Error('Authorization timed out') : new NeedsConnectError())),
+      () =>
+        finish(() => {
+          if (!interactive) noteSilentFailure(scope, 'silent refresh timed out')
+          reject(interactive ? new Error('Authorization timed out') : new NeedsConnectError())
+        }),
       timeoutMs,
     )
     try {
@@ -706,6 +768,12 @@ function startKeepAlive(): void {
     const t = tokens[GMAIL_SCOPE]
     // Only refresh once the user has connected at least once.
     if (!t) return
+    // And only while the grant is still renewable. A token that expired days
+    // ago satisfies "expires within 10 minutes" for ever, so this used to fire
+    // on every tick, focus and visibility change until the tab was closed —
+    // Google over and over, for a grant no refresh could bring back.
+    if (silentlyRefused(GMAIL_SCOPE) || silentFailures[GMAIL_SCOPE]) return
+    if (t.expiresAt <= Date.now() - RENEWABLE_MS) return
     // Refresh well ahead of expiry (10 min) so the token is never close to
     // dying while the tab is open.
     if (t.expiresAt - Date.now() < 10 * 60_000) {

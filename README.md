@@ -83,8 +83,22 @@ consent screens have opened in the last minute, and the last error for each —
 enough to diagnose from outside the browser, with no tokens or message content
 in it.
 
-A circuit breaker still caps interactive prompts at three per scope per minute,
-so nothing can reopen the consent screen without end.
+A circuit breaker caps interactive prompts at three per scope per minute, so
+nothing can reopen the consent screen without end.
+
+**Silent refreshes are the other half**, and were the loop that outlasted three
+fixes aimed at the interactive path. A silent refresh renews a token with no
+UI; it fails when the grant behind it is gone, and repeating it cannot change
+that. Nothing recorded those failures or slowed them down, so a grant that had
+lapsed was retried by the keep-alive every 45 seconds, on every window focus
+and on every visibility change, for as long as the tab stayed open — Google
+appearing over and over, while the diagnostics stayed empty because only the
+interactive path was logged. Now a refused scope is recorded
+(`silentRefreshFailures`), left alone for ten minutes, no longer counts as
+connected, and the keep-alive skips a token too far past expiry to renew
+(`RENEWABLE_MS`). Reproduced from a real report — four scopes expired between
+four and eight days — where sixteen focus events produced sixteen more Google
+calls; after the fix, none.
 
 Google reports the access it actually GRANTED, which is not always the scope
 string that was asked for: where a broader grant already covers the request,
