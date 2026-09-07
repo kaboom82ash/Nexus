@@ -12,6 +12,7 @@ export interface ActionsMenuProps {
   onImport: () => void
   onReload: () => void
   onSettings: () => void
+  onDiagnostics: () => void
 }
 
 function digestSync(): boolean {
@@ -32,6 +33,7 @@ export function ActionsMenu({
   onImport,
   onReload,
   onSettings,
+  onDiagnostics,
 }: ActionsMenuProps) {
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
@@ -92,6 +94,9 @@ export function ActionsMenu({
             ⬆ Import dashboard
           </button>
           <div className="menu__sep" />
+          <button className="menu__item" role="menuitem" onClick={run(onDiagnostics)}>
+            🩺 Sign-in diagnostics
+          </button>
           <button className="menu__item" role="menuitem" onClick={run(onSettings)}>
             ⚙ Settings
           </button>

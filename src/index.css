@@ -1474,3 +1474,46 @@ a.btn {
 .agentedit__name:focus {
   border-color: var(--accent);
 }
+
+/* ---------- Sign-in diagnostics ---------- */
+.diag {
+  max-height: 46vh;
+  overflow: auto;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The reason a sign-in failed, full width under the header. It wraps rather
+   than truncating: this text exists to be read, and Google's wording is the
+   part that names the fix. */
+.authproblem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.45);
+}
+.authproblem__icon {
+  flex: 0 0 auto;
+  line-height: 1.4;
+}
+.authproblem__text {
+  flex: 1;
+  min-width: 0;
+}
+.authproblem .btn {
+  flex: 0 0 auto;
+}

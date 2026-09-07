@@ -309,6 +309,83 @@ function clearPromptLog(scope: string): void {
   delete promptLog[scope]
 }
 
+/**
+ * Why the last sign-in for a scope failed, kept verbatim.
+ *
+ * Google has several very different ways of refusing, and they need opposite
+ * responses from the user: an origin missing from the OAuth client, an app
+ * awaiting verification, a blocked popup, a declined checkbox, an API switched
+ * off in Cloud. The UI used to catch them all into one silent "Connect" state,
+ * so every one of them looked like the same thing — a button you press, that
+ * shows you Google, and changes nothing. That is indistinguishable from a
+ * loop, and it hides the one piece of information that would end it.
+ */
+const authErrors: Record<string, string> = {}
+
+function noteAuthError(scope: string, message: string): void {
+  authErrors[scope] = message
+}
+
+export function lastAuthError(scope: string): string {
+  return authErrors[scope] ?? ''
+}
+
+/** Google's own wording, mapped to what the reader can actually do about it. */
+export function explainAuthError(raw: string): string {
+  const t = raw.toLowerCase()
+  if (/origin|redirect_uri|400/.test(t)) {
+    return `${raw} — this site's address is probably missing from the OAuth client's "Authorized JavaScript origins" in Google Cloud. Signing in again will not help until it is added.`
+  }
+  if (/popup_failed_to_open|popup_blocked/.test(t)) {
+    return `${raw} — the browser blocked Google's popup. Allow popups for this site and press again.`
+  }
+  if (/popup_closed/.test(t)) {
+    return `${raw} — the Google window was closed before finishing. Press again and complete it.`
+  }
+  // Before the access_denied test: Google reports a verification block AS an
+  // access_denied, and the two need opposite responses — one is "tick the box
+  // this time", the other cannot be fixed by signing in at all.
+  if (/verification|unverified|has not completed|app is blocked/.test(t)) {
+    return `${raw} — Google is blocking this app pending verification, not refusing the permission. Add your address as a test user on the OAuth consent screen in Google Cloud; signing in again will not help until you do.`
+  }
+  if (/access_denied|denied|not granted/.test(t)) {
+    return `${raw} — the permission was declined. Press again and leave every box ticked.`
+  }
+  if (/idpiframe|cookie|storage/.test(t)) {
+    return `${raw} — third-party cookies or site storage are blocked for accounts.google.com, which Google's sign-in needs.`
+  }
+  if (/timed out/.test(t)) {
+    return `${raw} — nothing came back from Google. Check that the popup was not blocked.`
+  }
+  return raw
+}
+
+/** Everything needed to diagnose a sign-in problem from outside the browser. */
+export function authDiagnostics(): Record<string, unknown> {
+  const now = Date.now()
+  return {
+    origin: typeof location !== 'undefined' ? location.origin : '(none)',
+    href: typeof location !== 'undefined' ? location.href : '(none)',
+    clientId: getClientId() || '(not configured)',
+    gisLoaded:
+      typeof window !== 'undefined' &&
+      !!(window as unknown as { google?: { accounts?: unknown } }).google?.accounts,
+    cookiesEnabled: typeof navigator !== 'undefined' ? navigator.cookieEnabled : null,
+    scopes: Object.keys(tokens).map((s) => ({
+      scope: s,
+      expiresInSeconds: Math.round((tokens[s].expiresAt - now) / 1000),
+      expired: tokens[s].expiresAt <= now,
+    })),
+    promptsInLastMinute: Object.fromEntries(
+      Object.keys(promptLog).map((s) => [
+        s,
+        promptLog[s].filter((t) => now - t < PROMPT_WINDOW_MS).length,
+      ]),
+    ),
+    lastErrors: { ...authErrors },
+  }
+}
+
 function clearAllScopeTokens(): void {
   tokens = {}
   persistTokens()
@@ -350,6 +427,10 @@ async function requestToken(
 
   if (interactive) {
     if (tooManyPrompts(scope)) {
+      noteAuthError(
+        scope,
+        'Google sign-in was opened 3 times in a minute without succeeding — the failure is not consent',
+      )
       throw new Error(
         'Google sign-in was opened several times without succeeding — something other than consent is failing. Check the browser console, and that this site is in the OAuth client\u2019s Authorized JavaScript origins.',
       )
@@ -405,8 +486,12 @@ async function acquireToken(
       scope,
       callback: (resp) => {
         if (resp.error || !resp.access_token) {
+          const detail = [resp.error, (resp as { error_description?: string }).error_description]
+            .filter(Boolean)
+            .join(': ')
+          if (interactive) noteAuthError(scope, detail || 'Authorization failed')
           finish(() =>
-            reject(interactive ? new Error(resp.error || 'Authorization failed') : new NeedsConnectError()),
+            reject(interactive ? new Error(detail || 'Authorization failed') : new NeedsConnectError()),
           )
           return
         }
@@ -437,7 +522,11 @@ async function acquireToken(
         // freely later without the breaker holding a stale count.
         if (granted.length) {
           clearPromptLog(scope)
-          for (const g of granted) clearPromptLog(g)
+          delete authErrors[scope]
+          for (const g of granted) {
+            clearPromptLog(g)
+            delete authErrors[g]
+          }
         }
         // Broadcast ONLY on an interactive sign-in so all widgets refresh once
         // after login. Silent/background refreshes must NOT broadcast, or they
@@ -448,10 +537,12 @@ async function acquireToken(
         finish(() => resolve(token))
       },
       error_callback: (err) => {
+        const detail = [err?.type, err?.message].filter(Boolean).join(': ')
+        if (interactive) noteAuthError(scope, detail || 'Authorization failed')
         finish(() =>
           reject(
             interactive
-              ? new Error(err?.message || err?.type || 'Authorization failed')
+              ? new Error(detail || 'Authorization failed')
               : new NeedsConnectError(),
           ),
         )

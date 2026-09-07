@@ -57,6 +57,26 @@ content, so a weekly rebuild does not disturb either:
   in the real mailbox; that is the one write in the whole app, so it asks for
   `gmail.modify` on the click that needs it rather than at connect time.
 
+### When sign-in fails
+
+Google refuses in several very different ways — an origin missing from the
+OAuth client, an app awaiting verification, a blocked popup, a declined
+checkbox, an API switched off in Cloud — and they need opposite responses. The
+UI used to catch them all into one silent "Connect" state, which made every one
+of them look the same: a button that shows you Google and changes nothing.
+That is indistinguishable from a loop, and it hides the one fact that would end
+it. Google's own words are now kept per scope (`lastAuthError`), translated
+into what to do about them (`explainAuthError`), and shown beside the chips.
+
+**Actions ▸ 🩺 Sign-in diagnostics** dumps the origin, the client id, whether
+Google's script loaded, which scopes are held and for how long, how many
+consent screens have opened in the last minute, and the last error for each —
+enough to diagnose from outside the browser, with no tokens or message content
+in it.
+
+A circuit breaker still caps interactive prompts at three per scope per minute,
+so nothing can reopen the consent screen without end.
+
 Google reports the access it actually GRANTED, which is not always the scope
 string that was asked for: where a broader grant already covers the request,
 the response names the broader scope — `gmail.modify` answers a

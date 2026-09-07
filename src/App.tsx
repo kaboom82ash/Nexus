@@ -18,12 +18,16 @@ import { CategoryBar } from './components/CategoryBar'
 import { TabStrip } from './components/TabStrip'
 import { ActionsMenu } from './components/ActionsMenu'
 import { GlobalSettings } from './components/GlobalSettings'
+import { AuthDiagnostics } from './components/AuthDiagnostics'
 import { WeeklyBriefing } from './components/WeeklyBriefing'
 
 export default function App() {
   const [state, setState] = useState<DashboardState>(() => loadState())
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
   const [showGlobalSettings, setShowGlobalSettings] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  // Why Google sign-in last failed — a sentence, so it gets its own row.
+  const [authProblem, setAuthProblem] = useState('')
   // Bumped by the Actions menu to remount the digest iframe.
   const [digestReload, setDigestReload] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -171,7 +175,7 @@ export default function App() {
           onRename={renameTab}
         />
         <div className="app__meta">
-          <GoogleAuthBar />
+          <GoogleAuthBar onProblem={setAuthProblem} />
           {activeTab && (
             <span className="app__count">
               {filledCount}/{activeTab.tiles.length} tiles
@@ -182,6 +186,7 @@ export default function App() {
             onImport={() => fileInputRef.current?.click()}
             onReload={() => setDigestReload((n) => n + 1)}
             onSettings={() => setShowGlobalSettings(true)}
+            onDiagnostics={() => setShowDiagnostics(true)}
           />
           <input
             ref={fileInputRef}
@@ -192,6 +197,24 @@ export default function App() {
           />
         </div>
       </header>
+
+      {authProblem && (
+        <div className="authproblem" role="status">
+          <span className="authproblem__icon" aria-hidden="true">
+            ⚠️
+          </span>
+          <span className="authproblem__text">{authProblem}</span>
+          <button
+            className="btn btn--sm"
+            onClick={() => setShowDiagnostics(true)}
+          >
+            Diagnostics
+          </button>
+          <button className="btn btn--sm" onClick={() => setAuthProblem('')}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* One filter for the whole digest, above everything it governs, and
           the digest's own sections directly under it. */}
@@ -226,6 +249,10 @@ export default function App() {
 
       {showGlobalSettings && (
         <GlobalSettings onClose={() => setShowGlobalSettings(false)} />
+      )}
+
+      {showDiagnostics && (
+        <AuthDiagnostics onClose={() => setShowDiagnostics(false)} />
       )}
     </div>
   )

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   GMAIL_READONLY_SCOPE,
+  explainAuthError,
   isMockMode,
   isScopeAuthorized,
+  lastAuthError,
   requestScopes,
 } from '../lib/gmail'
 import { CALENDAR_SCOPE } from '../lib/calendar'
@@ -29,7 +31,17 @@ const SERVICES: {
  * `nexus:google-token`, which any interactive grant fires — including one made
  * from inside the briefing's iframe.
  */
-export function GoogleAuthBar() {
+/**
+ * `onProblem` lifts the failure text out of the header. It is a sentence, not
+ * a label — it names the cause and what to do — and the header's row of chips
+ * has nowhere to put a sentence without truncating exactly the part that
+ * matters. The app renders it full width underneath instead.
+ */
+export function GoogleAuthBar({
+  onProblem,
+}: {
+  onProblem?: (message: string) => void
+}) {
   const read = useCallback(
     () =>
       Object.fromEntries(
@@ -78,10 +90,19 @@ export function GoogleAuthBar() {
       const reAsk = refused === svc || state[svc]
       await requestScopes([target.scope], true, reAsk)
       setRefused(null)
+      onProblem?.('')
       setFailing((f) => ({ ...f, [svc]: '' }))
-    } catch {
-      // requestScopes throws when the scope came back ungranted.
+    } catch (err) {
+      // Never swallow this. Google refuses in several very different ways —
+      // an origin missing from the OAuth client, an app awaiting verification,
+      // a blocked popup, a declined checkbox — and they need opposite
+      // responses. Caught silently they all look like one thing: a button that
+      // shows you Google and changes nothing, which reads as a loop.
       setRefused(svc)
+      const raw =
+        lastAuthError(target.scope) ||
+        (err instanceof Error ? err.message : 'Google sign-in failed')
+      onProblem?.(`${target.label}: ${explainAuthError(raw)}`)
     } finally {
       setPending(null)
       setState(read())
