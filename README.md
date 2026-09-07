@@ -12,15 +12,24 @@ Checking any item queues it to the punch list, which persists in your browser
 across weekly rebuilds; ✓ closes an item as done and ✕ closes it as not needed,
 and both stay reopenable from the punch list.
 
-The app shell owns the two controls that govern the whole page, stacked above
-it: a **category filter** (All, Critical, Personal, Kids, Health, Finances,
-Home, Lifestyle — multi-select, applying to every tab at once) and the digest's
-own **tab row**. Both read the briefing's `window.__nexusDigest` API rather than
-duplicating its state, so a rebuilt page that renames or adds a tab needs no
-change in the shell. The first tab, **One page**, is where you land and is
-every view at once: the open items, then the calendar as four expandable
-sections, then the inbox — counts, what arrived since your last login, and the
-most recent mail.
+The app shell hoists the digest's **tab row** out of the iframe and puts it
+under the header. It reads the briefing's `window.__nexusDigest` API rather
+than duplicating its state, so a rebuilt page that renames or adds a tab needs
+no change in the shell. (A category filter used to sit above it; a second
+filter over a page already organised by category was one more control to keep
+in step with the thing it filtered, so it is gone.)
+
+The first tab is **today's date**, and it is where you land: every view at
+once — the open items, the calendar as four expandable sections, the inbox
+counts and what arrived since your last login, and the emails by category.
+
+Mail has no tab of its own. It is rendered into **Inbox & tasks by category**,
+grouped into a card per category: two tabs listing the same messages meant two
+sets of checkboxes writing to one punch-list entry, and the question each
+answered was the same question. The punch list offers a **printable version** —
+printing the app itself gives you a dark screenshot with a sticky masthead
+across the middle, so it composes a plain light document instead: open items,
+hardest first, with a box to tick.
 
 "Last login" is a *session*, not a page load. It used to be stamped forward on
 every boot, so reloading the page redefined your last visit as a moment ago and

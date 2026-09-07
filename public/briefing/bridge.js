@@ -134,10 +134,6 @@
       d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate()
   }
 
-  function sevPill(sev) {
-    var label = sev.charAt(0).toUpperCase() + sev.slice(1)
-    return '<span class="pill sev-' + sev + ' sev-tag">' + label + '</span>'
-  }
 
 
   // ---- lookback range -----------------------------------------------------
@@ -339,45 +335,88 @@
     'border:1px solid var(--line);background:transparent;color:var(--accent);cursor:pointer}',
     '.live-attach:hover{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}',
 
-    // One email per line: date, sender, subject, then every action inline.
-    '.cat-grid-items:has(.mail-line){display:block;padding:0}',
-    '.cat-grid-items .cat-row.mail-line{max-width:none;width:100%;flex:none;',
-    'display:block;margin:0 0 6px;padding:8px 12px}',
-    '.mail-line__main{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
-    '.mail-line__when{flex:0 0 104px;font-size:11px;opacity:.85}',
-    '.mail-line__from{flex:0 1 130px;font-size:12px;font-weight:600;overflow:hidden;',
-    'text-overflow:ellipsis;white-space:nowrap}',
-    '.mail-line__subj{flex:1 1 auto;min-width:80px;font-size:13px;font-weight:600;',
-    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '.mail-line__tags{display:flex;gap:5px;align-items:center;flex:0 0 auto}',
-    '.mail-line .cat-links{display:flex;gap:6px;align-items:center;margin:0;flex:0 0 auto}',
-    '.mail-line .close-btn{margin-left:0;padding:2px 7px}',
-    '.mail-line .cat-links>*{padding:2px 7px;font-size:13px;line-height:1.5;',
-    'text-decoration:none;border-radius:6px;border:1px solid currentColor}',
-    // The band's label rail stretches to the tallest child; with single-line
-    // rows that left a large empty block under one email.
-    '.cat-grid-band:has(.mail-line){align-items:start}',
-    '.cat-grid-items:has(.mail-line){padding:6px}',
-    // With one-line rows the label rail is the tallest thing in the band and
-    // was setting its height, leaving dead space beside a single email.
-    '.cat-grid-band:has(.mail-line) .cat-grid-label{padding:8px 10px;',
-    'flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap}',
-    '.cat-grid-band:has(.mail-line) .cat-grid-label .cnt{margin-left:auto}',
+    // Mail as a card grid, one section per category.
+    '.mailcats{display:flex;flex-direction:column;gap:18px}',
+    '.mailcat{border:1px solid var(--line);border-radius:14px;overflow:hidden;',
+    'background:var(--surface)}',
+    '.mailcat__head{display:flex;align-items:center;gap:10px;padding:11px 16px;',
+    'border-bottom:1px solid var(--line);background:var(--surface-2)}',
+    '.mailcat__icon{font-size:16px;line-height:1}',
+    '.mailcat__name{margin:0;font-size:14px;font-weight:700;letter-spacing:.01em}',
+    '.mailcat__n{font-family:"IBM Plex Mono",monospace;font-size:12px;padding:1px 9px;',
+    'border-radius:999px;background:rgba(127,127,127,.22)}',
+    '.mailcat__unread{margin-left:auto;font-size:11.5px;color:var(--accent);font-weight:600}',
+    // Each category keeps its colour as a top edge — enough to tell them
+    // apart while scrolling, without tinting the mail itself.
+    '.mailcat--personal .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-personal)}',
+    '.mailcat--kids .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-kids)}',
+    '.mailcat--home .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-home)}',
+    '.mailcat--finance .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-finance)}',
+    '.mailcat--health .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-health)}',
+    '.mailcat--lifestyle .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-lifestyle)}',
+    '.mailcat__grid{display:grid;gap:10px;padding:14px 16px;',
+    'grid-template-columns:repeat(auto-fill,minmax(285px,1fr))}',
+
+    // A card. Severity is a left bar, not a fill: a grid of saturated tiles is
+    // a wall of colour, and the colour is there to make ONE card stand out.
+    '.cat-row.mail-card{display:block;max-width:none;width:auto;margin:0;',
+    'padding:12px 14px 10px;border:1px solid var(--line);border-left:3px solid var(--line);',
+    'border-radius:10px;background:var(--surface-2);color:var(--ink);',
+    'transition:border-color .12s,transform .12s}',
+    '.cat-row.mail-card:hover{transform:translateY(-1px);border-color:var(--accent)}',
+    '.cat-row.mail-card.sev-critical{background:var(--surface-2);color:var(--ink);',
+    'border-left-color:var(--critical)}',
+    '.cat-row.mail-card.sev-high{background:var(--surface-2);color:var(--ink);',
+    'border-left-color:var(--high)}',
+    '.cat-row.mail-card.sev-medium{background:var(--surface-2);color:var(--ink);',
+    'border-left-color:var(--medium)}',
+    '.cat-row.mail-card.sev-low{background:var(--surface-2);color:var(--ink);',
+    'border-left-color:var(--low)}',
+    '.mail-card--unread{background:var(--surface)}',
+    '.mail-card__body{display:block}',
+    '.mail-card__top{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}',
+    '.mail-card__from{flex:1;min-width:0;font-size:11.5px;font-weight:600;',
+    'color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.mail-card__when{flex:0 0 auto;font-size:10.5px;color:var(--muted)}',
+    '.cat-row .mail-card__subj{font-size:14px;font-weight:600;line-height:1.35;',
+    'color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
+    'overflow:hidden;margin-bottom:8px}',
+    '.mail-card__tags{display:flex;align-items:center;gap:6px;margin-bottom:9px;',
+    'min-height:16px}',
+    '.mail-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);',
+    'display:inline-block;flex:0 0 auto}',
+    '.mail-card__sev{font-size:9.5px;font-weight:700;text-transform:uppercase;',
+    'letter-spacing:.06em;padding:1px 6px;border-radius:4px;color:#0b0f16}',
+    '.mail-card__sev--critical{background:var(--critical)}',
+    '.mail-card__sev--high{background:var(--high)}',
+    '.mail-card__sev--medium{background:var(--medium)}',
+    '.mail-card__sev--low{background:var(--low)}',
+    // The card's footer is one zone, not two. Our actions and the page's own
+    // quick actions are separate elements, and giving each its own bordered
+    // strip stacked two rules inside a small card — so only the first carries
+    // the rule and the rest flow underneath it.
+    '.mail-card .cat-links{display:flex;gap:5px;align-items:center;flex-wrap:wrap;',
+    'margin:0;padding-top:9px;border-top:1px solid var(--line)}',
+    '.mail-card .qa-strip{display:flex;gap:5px;align-items:center;flex-wrap:wrap;',
+    'margin:6px 0 0;padding:0;border:none}',
+    '.mail-act,.mail-card .qa-btn,.mail-card .close-btn{padding:3px 8px;font-size:12.5px;',
+    'line-height:1.4;text-decoration:none;border-radius:7px;',
+    'border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}',
+    '.mail-act:hover,.mail-card .qa-btn:hover,.mail-card .close-btn:hover{',
+    'border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}',
+    '.mail-card .close-btn{margin-left:0}',
+    '.mail-card .dismiss-btn{margin-left:0}',
+    '.mail-card select{font:inherit;font-size:11.5px;padding:2px 6px;border-radius:7px;',
+    'border:1px solid var(--line);background:var(--surface);color:var(--ink);',
+    'max-width:120px}',
+    // The page puts its checkbox at the top of the row; on a card it belongs
+    // beside the sender rather than on a line of its own.
+    '.mail-card input[type="checkbox"]{margin:0 0 6px}',
     // The page appends its own .qa-group (calendar/reminder/note/flag +
     // status) as a separate block. On a one-line row it has to sit inline
     // with everything else, or "all buttons in one row" is two.
-    '.mail-line .qa-group{display:inline-flex;margin:0;padding:0;border-top:none;',
-    'flex:0 0 auto;align-items:center}',
-    '.mail-line .qa-group select{padding:2px 4px;font-size:11px;max-width:118px}',
-    '.mail-line .qa-btn{width:22px;height:22px}',
-    '.mail-line input[type="checkbox"]{margin:0;flex:0 0 auto}',
     // Wide screens get a true single line; narrow ones may wrap, which is
     // the right trade rather than a horizontal scrollbar.
-    '@media (min-width:1000px){.cat-grid-items .cat-row.mail-line{display:flex;',
-    'align-items:center;gap:8px;flex-wrap:nowrap}',
-    '.mail-line .mail-line__main{flex-wrap:nowrap;flex:1 1 auto;min-width:0}',
-    '.mail-line .cat-links,.mail-line .qa-group{flex:0 0 auto}}',
-    '@media (max-width:900px){.mail-line__when,.mail-line__from{flex:0 0 auto}}',
 
     '.mon-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
     '.mon-q{flex:1 1 240px}',
@@ -861,87 +900,6 @@
    * tab, and the same messages listed in two places meant two sets of
    * checkboxes writing to one punch-list entry.
    */
-  /**
-   * One live message as a row the page's injectCheckables() will adopt.
-   *
-   * `wide` lays it out as a single full-width line — received time first,
-   * then subject, then every action on the same row. A card grid wastes the
-   * width on short subjects and pushes the count you scan for (when it
-   * arrived) to the middle of a wrapped paragraph.
-   */
-  function mailRowHtml(m, mock, fresh, wide) {
-    var sev = mailSeverity(m.score)
-    var meta = [
-      esc(m.from),
-      timeLabel(m.date, false),
-      m.unread ? 'Unread' : '',
-      // Gmail's own tab, kept as prose: it is not one of the page's
-      // categories, so it must not become a data-cat.
-      m.category && m.category !== 'other' ? esc(m.category) : '',
-      esc((m.reasons || []).slice(0, 3).join(' · ')),
-    ].filter(Boolean).join(' · ')
-
-    // The API id is right here, so offer the reliable way to attach a message
-    // to an item — the id in Gmail's own address bar is a different encoding
-    // the API cannot resolve.
-    var compact = !!wide
-    var link = '<div class="cat-links"><a class="mail-link" href="' + esc(mailHref(m)) +
-      '" target="_blank" rel="noopener" title="Open in Gmail">' +
-      (compact ? '✉️' : '✉️ Open in Gmail ↗') + '</a>' +
-      (m.id ? '<button type="button" class="live-attach" data-mid="' + esc(m.id) +
-        '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">' +
-        (compact ? '📌' : '📌 Add to punch list') + '</button>' +
-        '<button type="button" class="live-attach live-draft" data-mid="' + esc(m.id) +
-        '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
-        '" data-snippet="' + esc((m.reasons || []).join(', ')) +
-        '" title="Draft a reply to this message">' +
-        (compact ? '✍️' : '✍️ Draft reply') + '</button>' : '') +
-      // Only offered on mail that is actually unread: a button that would do
-      // nothing is worse than no button, and this one costs a write scope.
-      (m.id && m.unread
-        ? '<button type="button" class="live-attach live-read" data-mid="' + esc(m.id) +
-          '" title="Mark this read in Gmail">' +
-          (compact ? '📖' : '📖 Mark read') + '</button>'
-        : '') +
-      '</div>'
-
-    // No data-cat: the page's own inferCategory() reads the title and always
-    // returns one of its known keys, so a live item can never land in a
-    // category the punch list refuses to render. And no severity pill inside
-    // .cat-title — the punch list takes an entry's title from that element's
-    // text, and the pill's label would be glued onto it.
-    if (!wide) {
-      return '<div class="cat-row sev-' + sev + '" data-sync="' + esc(syncKey('mail', m.id)) + '">' +
-        '<div class="cat-main">' +
-        '<div class="cat-title">' + esc(m.subject) + '</div>' +
-        '<div class="cat-meta">' + sevPill(sev) + ' ' +
-        ((fresh || []).indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span> ' : '') +
-        (mock ? '<span class="live-tag">sample</span> ' : '') + meta + '</div>' +
-        link +
-        '</div></div>'
-    }
-
-    var when = new Date(m.date)
-    var received = isNaN(when.getTime())
-      ? ''
-      : when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
-        when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-
-    // Two zones: a flexible left that truncates, and a fixed-width action
-    // zone. With the links inside the left zone they competed with the
-    // subject for space, and the subject — the only part you read — lost.
-    return '<div class="cat-row mail-line sev-' + sev + '" data-sync="' +
-      esc(syncKey('mail', m.id)) + '">' +
-      '<div class="cat-main mail-line__main">' +
-      '<span class="mail-line__when mono">' + esc(received) + '</span>' +
-      '<span class="mail-line__from">' + esc(m.from) + '</span>' +
-      '<span class="cat-title mail-line__subj">' + esc(m.subject) + '</span>' +
-      '<span class="mail-line__tags">' + sevPill(sev) +
-      ((fresh || []).indexOf(m.id) !== -1 ? '<span class="new-badge">NEW</span>' : '') +
-      (mock ? '<span class="live-tag">sample</span>' : '') + '</span>' +
-      '</div>' + link + '</div>'
-  }
-
   /**
    * Drop checkbox registrations whose element left the DOM on the last
    * re-render. The key itself stays, even when its list empties: the page
@@ -1693,14 +1651,6 @@
       if (btn) btn.title = mine + ' open and in your court'
     } catch (e) {}
 
-    // Emails tab: the rows actually rendered on it.
-    var daily = document.getElementById('daily-tab-count')
-    if (daily) {
-      daily.textContent = document.querySelectorAll(
-        '#panel-daily .cat-row:not(.is-closed):not(.no-check)',
-      ).length
-    }
-
     // Calendar: upcoming events inside the horizon, after the filter.
     var calBtn = document.querySelector('.tab-btn[data-panel="calendar"] .count')
     if (calBtn) {
@@ -1848,12 +1798,18 @@
    * them apart would mean two filters that have to be reasoned about together.
    */
   var FILTER_KEY = 'ak-digest-filters'
+  /**
+   * Empty means everything, which is now the only state there is: the category
+   * chips that drove this are gone from the top of the app. A selection left
+   * in storage from before would hide most of the page with no control on
+   * screen to explain it or undo it, so any stored one is cleared here rather
+   * than adopted.
+   */
   var activeFilters = (function () {
     try {
-      var raw = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null')
-      if (Array.isArray(raw)) return raw
+      localStorage.removeItem(FILTER_KEY)
     } catch (e) {}
-    return []   // empty = everything
+    return []
   })()
 
   function filtersOn() {
@@ -1908,7 +1864,7 @@
   function applyFilterToStaticRows() {
     var rows = document.querySelectorAll('main .cat-row, main .card')
     Array.prototype.forEach.call(rows, function (row) {
-      if (row.classList.contains('mail-line')) return   // ours; already filtered
+      if (row.classList.contains('mail-card')) return   // ours; already filtered
       var cat = row.dataset.cat || ''
       if (!cat && typeof inferCategory === 'function') {
         var t = row.querySelector('.cat-title, .card-title')
@@ -2226,39 +2182,26 @@
     return visit
   })()
 
-  var dailyPanel = null
-
   /**
-   * Mail gets its own tab. Two sections: what has arrived since you were last
-   * here, then the last 24 hours — the first is the one that answers "what did
-   * I miss", which a rolling 24-hour window cannot.
+   * Live mail is rendered into the sweep's own "Inbox & tasks by category"
+   * panel rather than a tab of its own. Two tabs both listing the same
+   * messages meant two sets of checkboxes writing to one punch-list entry, and
+   * the question each answered — "what came in" — was the same question.
    */
-  function buildDailyTab(bridge) {
-    if (dailyPanel) return
-    var main = document.querySelector('main')
-    var nav = document.querySelector('.masthead .tabs')
-    if (!main || !nav || typeof panels !== 'object' || !panels) return
-
-    dailyPanel = el('div', 'panel')
-    dailyPanel.id = 'panel-daily'
-    dailyPanel.innerHTML =
-      '<section id="mail-counts"></section>' +
-      '<section id="mail-since"></section><section id="mail-24h"></section>'
-    main.appendChild(dailyPanel)
-    panels.daily = dailyPanel
-
-    var btn = el('button', 'tab-btn')
-    btn.type = 'button'
-    btn.setAttribute('role', 'tab')
-    btn.dataset.panel = 'daily'
-    btn.setAttribute('aria-selected', 'false')
-    btn.innerHTML = '🕐 24/7 <span class="count mono" id="daily-tab-count">0</span>'
-    // The page wires its tabs from a NodeList captured at load, so a button
-    // added afterwards needs its own handler.
-    btn.addEventListener('click', function () {
-      if (typeof switchTab === 'function') switchTab('daily')
-    })
-    nav.insertBefore(btn, nav.children[1] || null)
+  function mailHost() {
+    var panel = document.getElementById('panel-actions')
+    if (!panel) return null
+    var host = document.getElementById('mail-by-cat')
+    if (!host) {
+      // NOT `no-check`: that class tells the page's injectCheckables() to skip
+      // a subtree, which is right for the calendar host and exactly wrong
+      // here — it is what puts the tick box on a message that queues it to the
+      // punch list.
+      host = el('section', '')
+      host.id = 'mail-by-cat'
+      panel.insertBefore(host, panel.firstChild)
+    }
+    return host
   }
 
   var CATEGORY_META = {
@@ -2283,72 +2226,104 @@
     var keys = Object.keys(groups).sort(function (a, b) {
       return groups[b].length - groups[a].length
     })
-    return keys.map(function (c) {
+    return '<div class="mailcats">' + keys.map(function (c) {
       var meta = CATEGORY_META[c] || { icon: '📧', label: c }
       var list = groups[c]
-      return '<div class="cat-grid-band band-' + esc(c) + '">' +
-        '<div class="cat-grid-label">' +
-        '<span class="icon">' + meta.icon + '</span>' +
-        '<span class="name">' + esc(meta.label) + '</span>' +
-        '<span class="cnt">' + list.length + (list.length === 1 ? ' email' : ' emails') + '</span>' +
-        '</div>' +
-        '<div class="cat-grid-items">' +
-        list.map(function (m) { return mailRowHtml(m, mock, fresh, true) }).join('') +
-        '</div></div>'
-    }).join('')
+      var unread = list.filter(function (m) { return m.unread }).length
+      return '<section class="mailcat mailcat--' + esc(c) + '">' +
+        '<header class="mailcat__head">' +
+        '<span class="mailcat__icon">' + meta.icon + '</span>' +
+        '<h3 class="mailcat__name">' + esc(meta.label) + '</h3>' +
+        '<span class="mailcat__n">' + list.length + '</span>' +
+        (unread ? '<span class="mailcat__unread">' + unread + ' unread</span>' : '') +
+        '</header>' +
+        '<div class="mailcat__grid">' +
+        list.map(function (m) { return mailCardHtml(m, mock, fresh) }).join('') +
+        '</div></section>'
+    }).join('') + '</div>'
   }
 
-  function mailSectionHtml(title, sub, items, mock, emptyText, fresh) {
-    var body = items.length
-      ? categoryBandsHtml(items, mock, fresh || [])
-      : '<p class="note">' + esc(emptyText) + '</p>'
-    return '<div class="section-head"><h2>' + esc(title) + '</h2>' +
-      '<span class="sub">' + esc(sub) + '</span></div>' + body
+  /**
+   * One message as a card.
+   *
+   * The subject is the only part anyone reads first, so it gets the size and
+   * two lines to use; who and when sit above it in the muted register they
+   * belong to; the actions sit on their own row so they never compete with the
+   * subject for width, as they did when this was a single line. Severity is a
+   * bar down the left rather than a fill: a grid of saturated tiles is a wall
+   * of colour, and the point of the colour is to let one card stand out.
+   */
+  function mailCardHtml(m, mock, fresh) {
+    var sev = mailSeverity(m.score)
+    var when = new Date(m.date)
+    var received = isNaN(when.getTime())
+      ? ''
+      : when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
+        when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    var isNew = (fresh || []).indexOf(m.id) !== -1
+
+    return '<article class="cat-row mail-card sev-' + sev +
+      (m.unread ? ' mail-card--unread' : '') + '" data-sync="' +
+      esc(syncKey('mail', m.id)) + '">' +
+      '<div class="cat-main mail-card__body">' +
+      '<div class="mail-card__top">' +
+      '<span class="mail-card__from">' + esc(m.from) + '</span>' +
+      '<span class="mail-card__when mono">' + esc(received) + '</span>' +
+      '</div>' +
+      '<div class="cat-title mail-card__subj">' + esc(m.subject) + '</div>' +
+      '<div class="mail-card__tags">' +
+      (m.unread ? '<span class="mail-dot" title="Unread"></span>' : '') +
+      (isNew ? '<span class="new-badge">NEW</span>' : '') +
+      (mock ? '<span class="live-tag">sample</span>' : '') +
+      '<span class="mail-card__sev mail-card__sev--' + sev + '">' + sev + '</span>' +
+      '</div>' +
+      '<div class="cat-links mail-card__acts">' +
+      '<a class="mail-link mail-act" href="' + esc(mailHref(m)) +
+      '" target="_blank" rel="noopener" title="Open in Gmail">✉️</a>' +
+      (m.id
+        ? '<button type="button" class="live-attach mail-act" data-mid="' + esc(m.id) +
+          '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌</button>' +
+          '<button type="button" class="live-attach live-draft mail-act" data-mid="' + esc(m.id) +
+          '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
+          '" data-snippet="' + esc((m.reasons || []).join(', ')) +
+          '" title="Draft a reply to this message">✍️</button>'
+        : '') +
+      (m.id && m.unread
+        ? '<button type="button" class="live-attach live-read mail-act" data-mid="' + esc(m.id) +
+          '" title="Mark this read in Gmail">📖</button>'
+        : '') +
+      '</div></div></article>'
+  }
+
+  /**
+   * Every message in the current window, grouped by category, newest first.
+   * One list rather than the old "since your last visit" / "last 24 hours"
+   * split: those were two views of the same mail, and a message could only be
+   * checked off in one of them.
+   */
+  function mailByCategoryHtml(items, mock, newIds) {
+    var pool = (items || []).filter(mailPasses).slice()
+    pool.sort(function (a, b) { return b.date.localeCompare(a.date) })
+    var fresh = newIds || []
+    var fresh24 = pool.filter(function (m) {
+      return new Date(m.date).getTime() >= Date.now() - 86400000
+    }).length
+
+    return '<div class="section-head"><h2>✉️ Emails by category</h2>' +
+      '<span class="sub">' +
+      (pool.length
+        ? pool.length + ' in the current window · ' + fresh24 + ' in the last 24 hours · ' +
+          'check one to queue it, ✓ done, ✕ not needed, 📖 read'
+        : 'Nothing in the current window') +
+      '</span></div>' +
+      (pool.length
+        ? categoryBandsHtml(pool, mock, fresh)
+        : '<p class="note">No mail in this window. Widen it with "Actions from", or press Sync now.</p>')
   }
 
   function renderDaily(items, mock, newIds) {
-    if (!dailyPanel) return
-    var fresh = newIds || []
-    var now = Date.now()
-    var pool = (items || []).filter(mailPasses)
-    var since = pool.filter(function (m) {
-      return previousVisit && new Date(m.date).getTime() > previousVisit
-    })
-    var day = pool.filter(function (m) {
-      return new Date(m.date).getTime() >= now - 86400000
-    })
-    // Newest first: on an arrivals list, recency is the ordering that matters
-    // more than the priority score.
-    var byNewest = function (a, b) { return b.date.localeCompare(a.date) }
-    since.sort(byNewest)
-    day.sort(byNewest)
-
-    var sinceLabel = previousVisit
-      ? new Date(previousVisit).toLocaleDateString('en-US', {
-          weekday: 'short', month: 'short', day: 'numeric',
-        }) + ' · ' + new Date(previousVisit).toLocaleTimeString('en-US', {
-          hour: 'numeric', minute: '2-digit',
-        })
-      : ''
-
-    document.getElementById('mail-since').innerHTML = mailSectionHtml(
-      '🆕 Since your last visit',
-      previousVisit ? 'Arrived after ' + sinceLabel + ' · grouped by category' : 'First visit on this browser — nothing to compare against yet',
-      since, mock,
-      previousVisit ? 'Nothing new since you were last here.' : 'Come back and this will show what arrived while you were away.',
-      fresh,
-    )
-    document.getElementById('mail-24h').innerHTML = mailSectionHtml(
-      '🕐 Last 24 hours',
-      'Everything that landed today, grouped by category · check one to queue it, ✓ to close it',
-      day, mock,
-      'Nothing in the last 24 hours.',
-      fresh,
-    )
-
-    var count = document.getElementById('daily-tab-count')
-    if (count) count.textContent = since.length || day.length
-
+    var host = mailHost()
+    if (host) host.innerHTML = mailByCategoryHtml(items, mock, newIds)
     renderInbox(items)
     rewirePage()
   }
@@ -3111,7 +3086,6 @@
   function retabs() {
     var map = {
       punchlist: '📋 Punch List',
-      daily: '✉️ Emails & Suggested Tasks',
       calendar: '📅 Calendar',
     }
     Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (btn) {
@@ -3130,6 +3104,27 @@
       actions.textContent = '🗂️ Inbox & tasks by category '
       if (c) actions.appendChild(c)
     }
+
+    // "Top actions — ranked by deadline", and the "Critical & time-sensitive"
+    // block inside it, is the sweep's own ranking of items the punch list
+    // already orders by severity and shows a deadline for. Two rankings of one
+    // set of items is one to keep in step, so it goes.
+    var actionsPanel = document.getElementById('panel-actions')
+    if (actionsPanel) {
+      Array.prototype.forEach.call(actionsPanel.querySelectorAll('section'), function (sec) {
+        var h = sec.querySelector('h2')
+        if (h && /top actions|ranked by deadline/i.test(h.textContent)) {
+          sec.style.display = 'none'
+        }
+      })
+    }
+  }
+
+  /** The one-page tab is today's view, so it is labelled with today's date. */
+  function todayLabel() {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
+    })
   }
 
   /** Section navigation within the Calendar tab. */
@@ -3503,7 +3498,8 @@
     onePagePanel.innerHTML =
       '<section id="onepage-items"></section>' +
       '<section id="onepage-cal" class="no-check"></section>' +
-      '<section id="inbox-slot"></section>'
+      '<section id="inbox-slot"></section>' +
+      '<section id="onepage-mail"></section>'
     main.appendChild(onePagePanel)
     panels.onepage = onePagePanel
 
@@ -3514,7 +3510,7 @@
     btn.setAttribute('aria-selected', 'false')
     // No count: this tab is every other tab at once, and no single number
     // says anything true about that.
-    btn.innerHTML = '🧾 One page'
+    btn.innerHTML = '🗓️ ' + esc(todayLabel())
     btn.addEventListener('click', function () {
       if (typeof switchTab === 'function') switchTab('onepage')
     })
@@ -3540,6 +3536,11 @@
       return isFinite(t) && t >= now && t <= horizon && eventPasses(ev)
     })
 
+    var tabBtn = document.querySelector('.tab-btn[data-panel="onepage"]')
+    if (tabBtn && tabBtn.textContent.trim() !== '🗓️ ' + todayLabel()) {
+      tabBtn.textContent = '🗓️ ' + todayLabel()
+    }
+
     document.getElementById('onepage-items').innerHTML = onePageItemsHtml()
 
     document.getElementById('onepage-cal').innerHTML =
@@ -3556,6 +3557,140 @@
       opSection('load', '⚖️ Load balancing', hoursDashboardHtml(future))
 
     renderInbox(mail)
+
+    // The same emails-by-category board the Inbox tab shows. It is the bulk of
+    // what "today" actually consists of, so a page claiming to be today
+    // without it is a summary of everything except the mail.
+    var mailHostEl = document.getElementById('onepage-mail')
+    if (mailHostEl) mailHostEl.innerHTML = mailByCategoryHtml(mail, false, [])
+  }
+
+  // ---- printable punch list ------------------------------------------------
+
+  /**
+   * A punch list you can put on paper.
+   *
+   * Printing the app itself gives you a dark screenshot with a sticky masthead
+   * across the middle of it, so this composes a plain light document in a new
+   * window instead: the open items, hardest first, with a box to tick, the
+   * deadline, the category and who is holding it. Grouped by severity, because
+   * on paper that is the order you work them in and there is no filter to
+   * reach for.
+   */
+  function printableHtml() {
+    var rows = []
+    try {
+      Object.keys(STATE.punchlist || {}).forEach(function (id) {
+        var e = STATE.punchlist[id]
+        if (!e || e.done) return
+        var d = deadlineFrom(e.title)
+        rows.push({
+          title: e.title,
+          sev: e.severity || 'low',
+          cat: e.category || 'personal',
+          status: statusText(statusOf(id)),
+          days: d ? d.days : null,
+          subs: (e.subs || []).slice(),
+          added: e.addedAt || '',
+        })
+      })
+    } catch (err) {}
+
+    rows.sort(function (a, b) {
+      var d = (OP_SEV_ORDER[a.sev] === undefined ? 9 : OP_SEV_ORDER[a.sev]) -
+        (OP_SEV_ORDER[b.sev] === undefined ? 9 : OP_SEV_ORDER[b.sev])
+      if (d !== 0) return d
+      if (a.days === null && b.days === null) return 0
+      if (a.days === null) return 1
+      if (b.days === null) return -1
+      return a.days - b.days
+    })
+
+    var GROUPS = [
+      { key: 'critical', label: 'Critical' },
+      { key: 'high', label: 'High' },
+      { key: 'medium', label: 'Medium' },
+      { key: 'low', label: 'Low' },
+    ]
+
+    var body = GROUPS.map(function (g) {
+      var list = rows.filter(function (r) { return r.sev === g.key })
+      if (!list.length) return ''
+      return '<h2 class="grp grp--' + g.key + '">' + esc(g.label) +
+        ' <span class="grp__n">' + list.length + '</span></h2>' +
+        '<table><thead><tr>' +
+        '<th class="c-box"></th><th class="c-due">Due</th><th>Item</th>' +
+        '<th class="c-cat">Category</th><th class="c-st">Status</th>' +
+        '</tr></thead><tbody>' +
+        list.map(function (r) {
+          var meta = CATEGORY_META[r.cat] || { label: r.cat }
+          return '<tr>' +
+            '<td class="c-box"><span class="box"></span></td>' +
+            '<td class="c-due">' +
+            (r.days === null ? '—' : r.days === 0 ? 'today' : 'in ' + r.days + 'd') +
+            '</td>' +
+            '<td class="c-item">' + esc(r.title) +
+            (r.subs.length
+              ? '<ul>' + r.subs.map(function (x) {
+                  return '<li>' + esc(typeof x === 'string' ? x : (x && x.text) || '') + '</li>'
+                }).join('') + '</ul>'
+              : '') +
+            '</td>' +
+            '<td class="c-cat">' + esc(meta.label) + '</td>' +
+            '<td class="c-st">' + esc(String(r.status).replace(/^[^A-Za-z]+/, '')) + '</td>' +
+            '</tr>'
+        }).join('') +
+        '</tbody></table>'
+    }).join('')
+
+    var mine = rows.filter(function (r) { return /my court/i.test(r.status) }).length
+
+    return '<!doctype html><html><head><meta charset="utf-8">' +
+      '<title>Punch list — ' + esc(todayLabel()) + '</title><style>' +
+      '*{box-sizing:border-box}' +
+      'body{margin:0;padding:28px 32px;font:13px/1.5 -apple-system,BlinkMacSystemFont,' +
+      '"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#111;background:#fff}' +
+      'h1{margin:0 0 2px;font-size:21px}' +
+      '.meta{margin:0 0 22px;color:#555;font-size:12px}' +
+      '.grp{margin:22px 0 8px;font-size:13px;text-transform:uppercase;' +
+      'letter-spacing:.08em;padding-bottom:4px;border-bottom:2px solid #111}' +
+      '.grp--critical{border-color:#b91c1c;color:#b91c1c}' +
+      '.grp--high{border-color:#b45309;color:#b45309}' +
+      '.grp--medium{border-color:#1d4ed8;color:#1d4ed8}' +
+      '.grp--low{border-color:#15803d;color:#15803d}' +
+      '.grp__n{float:right;font-size:12px;color:#555}' +
+      'table{width:100%;border-collapse:collapse;margin-bottom:6px}' +
+      'th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;' +
+      'color:#666;padding:0 8px 5px;border-bottom:1px solid #ddd}' +
+      'td{padding:8px;border-bottom:1px solid #eee;vertical-align:top}' +
+      'tr{page-break-inside:avoid}' +
+      '.c-box{width:26px}.c-due{width:62px;white-space:nowrap;color:#444}' +
+      '.c-cat{width:120px;color:#444}.c-st{width:118px;color:#444}' +
+      '.c-item{font-weight:600}' +
+      '.c-item ul{margin:4px 0 0 16px;padding:0;font-weight:400;color:#444;font-size:12px}' +
+      '.box{display:block;width:13px;height:13px;border:1.5px solid #333;border-radius:3px}' +
+      '.none{color:#666;font-style:italic}' +
+      '@page{margin:14mm}' +
+      '@media print{body{padding:0}}' +
+      '</style></head><body>' +
+      '<h1>Punch list</h1>' +
+      '<p class="meta">' + esc(todayLabel()) + ' · ' + rows.length +
+      (rows.length === 1 ? ' open item' : ' open items') + ' · ' + mine +
+      ' in your court</p>' +
+      (body || '<p class="none">Nothing open — everything on the punch list is closed.</p>') +
+      '</body></html>'
+  }
+
+  function printPunchList() {
+    var w = window.open('', '_blank')
+    if (!w) {
+      setStatus('The browser blocked the print window — allow popups for this site', 'warn')
+      return
+    }
+    w.document.write(printableHtml())
+    w.document.close()
+    // Let the new document lay out before the print dialog measures it.
+    w.setTimeout(function () { w.focus(); w.print() }, 300)
   }
 
   // ---- Monitor tab: filters, thread timelines, history --------------------
@@ -3615,6 +3750,7 @@
       optionsHtml(SEVERITY_OPTS, '_none_') + '</select>' +
       '<select class="own-in own-in--sel mon-done">' + optionsHtml(DONE_FILTERS, 'open') + '</select>' +
       '<button type="button" class="live-btn mon-clear">Clear</button>' +
+      '<button type="button" class="live-btn mon-print" title="Open a clean, light-background copy of the open items and print it">🖨️ Printable version</button>' +
       '</div>' +
       '<div class="mon-count"></div>' +
       '<div class="mon-results"></div>'
@@ -3636,6 +3772,8 @@
       monitorPanel.querySelector('.mon-done').value = 'open'
       renderMonitor(bridge)
     })
+
+    monitorPanel.querySelector('.mon-print').addEventListener('click', printPunchList)
 
     monitorPanel.addEventListener('click', function (e) {
       var toggle = e.target.closest('.mon-thread-toggle')
@@ -4267,7 +4405,6 @@
       renderStats(lastData.events, lastData.mail)
     })
 
-    buildDailyTab(bridge)
     buildOnePageTab(bridge)
     // After the added tabs exist — renaming a button that has not been built
     // yet silently does nothing.
