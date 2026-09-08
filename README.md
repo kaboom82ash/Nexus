@@ -64,6 +64,21 @@ content, so a weekly rebuild does not disturb either:
   vocabulary, so they get the same checkbox as swept items and **queue to the
   punch list identically**.
 
+  **Routines** — the recurring blocks you keep for yourself — get their own
+  calendar section with a tick box and a note per occurrence. They are the one
+  thing on a calendar you can fail quietly: a meeting that did not happen
+  leaves a trace, because someone was waiting; the gym at seven simply passes.
+  The record has to outlive the data, since events are fetched from now
+  forward and this morning's occurrence is gone from the API by tomorrow — so
+  each one is written down the first time it is seen and the section renders
+  from that store. Routines are kept out of Key dates and Deadlines, which are
+  for holidays, birthdays, invitations and things with a clock on them.
+
+  An **all-day event counts as zero hours**, not twenty-four. It is a date
+  marker — a holiday, a birthday, a trip — and counting it as a full day made
+  every per-category total meaningless: one holiday outweighed a fortnight of
+  real meetings. They are shown in Key dates, where they belong.
+
   It also derives what the calendar implies but does not contain. **Suggested
   planning** proposes a travel block on each side of every event that carries a
   real address, using a drive time measured in the sweep's logistics rows where

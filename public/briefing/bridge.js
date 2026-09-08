@@ -185,15 +185,30 @@
    * does not know about is at risk there; keeping our records separate means
    * a weekly rebuild cannot drop them.
    */
+  /**
+   * Keep everything that was stored, not just the two keys this function used
+   * to name. saveOwn writes the whole object, so rebuilding a fixed shape here
+   * threw away every other branch on the next load — generated drafts and
+   * dismissed prep blocks have been quietly evaporating on reload, and the
+   * routine log would have joined them. Add a key to `own` and it now
+   * persists; nothing has to be listed twice.
+   */
+  var OWN_DEFAULTS = { items: {}, threads: {}, drafts: {}, prepOut: {}, routines: {} }
+
   function loadOwn() {
+    var out = {}
+    Object.keys(OWN_DEFAULTS).forEach(function (k) { out[k] = {} })
     try {
       var raw = localStorage.getItem(OWN_KEY)
       var parsed = raw ? JSON.parse(raw) : null
       if (parsed && typeof parsed === 'object') {
-        return { items: parsed.items || {}, threads: parsed.threads || {} }
+        Object.keys(parsed).forEach(function (k) { out[k] = parsed[k] })
+        Object.keys(OWN_DEFAULTS).forEach(function (k) {
+          if (!out[k] || typeof out[k] !== 'object') out[k] = {}
+        })
       }
     } catch (e) {}
-    return { items: {}, threads: {} }
+    return out
   }
 
   var own = loadOwn()
@@ -563,6 +578,38 @@
     '.op-sec__head:hover{background:var(--surface-2)}',
     '.op-sec__body{padding:0 16px 16px;border-top:1px solid var(--line)}',
     '.op-sec__body .section-head{margin-top:14px}',
+
+    // Routines: a tick box, when it was, and somewhere to say what happened.
+    '.rt-groups{display:flex;flex-direction:column;gap:14px}',
+    '.rt-group{border:1px solid var(--line);border-radius:12px;overflow:hidden;',
+    'background:var(--surface)}',
+    '.rt-group__head{display:flex;align-items:center;gap:10px;padding:10px 14px;',
+    'border-bottom:1px solid var(--line);background:var(--surface-2)}',
+    '.rt-group__name{margin:0;font-size:13.5px;font-weight:700}',
+    '.rt-group__score{margin-left:auto;font-size:12px;color:var(--muted)}',
+    '.rt-row{display:flex;align-items:center;gap:12px;padding:9px 14px;',
+    'border-bottom:1px solid var(--line);flex-wrap:wrap}',
+    '.rt-row:last-child{border-bottom:none}',
+    '.rt-tick{display:flex;align-items:center}',
+    '.rt-tick input{width:16px;height:16px;cursor:pointer}',
+    '.rt-when{flex:0 0 168px;font-size:12px;color:var(--muted)}',
+    '.rt-state{flex:0 0 62px;font-size:10.5px;font-weight:700;text-transform:uppercase;',
+    'letter-spacing:.05em;color:var(--muted)}',
+    '.rt-row.is-kept .rt-state{color:var(--low)}',
+    '.rt-row.is-missed .rt-state{color:var(--critical)}',
+    '.rt-row.is-kept .rt-when{text-decoration:line-through;opacity:.65}',
+    '.rt-row.is-missed{box-shadow:inset 3px 0 0 var(--critical)}',
+    '.rt-row.is-kept{box-shadow:inset 3px 0 0 var(--low)}',
+    '.rt-note-btn{margin-left:auto;font:inherit;font-size:12px;padding:3px 9px;',
+    'border-radius:7px;border:1px solid var(--line);background:transparent;',
+    'color:var(--ink);cursor:pointer}',
+    '.rt-note-btn:hover{border-color:var(--accent)}',
+    '.rt-note{flex:1 0 100%;margin-top:8px}',
+    '.rt-note.is-hidden{display:none}',
+    '.rt-note-in{width:100%;font:inherit;font-size:12.5px;padding:7px 9px;',
+    'border-radius:8px;border:1px solid var(--line);background:var(--surface-2);',
+    'color:var(--ink);resize:vertical}',
+    '.rt-note-in:focus{outline:none;border-color:var(--accent)}',
 
     // Suggested planning: one line per proposed block, the drive time big
     // enough to read at a glance and the add control always in the same place.
@@ -1169,6 +1216,18 @@
    */
   var ROUTINE = /\b(routine|block|focus|lunch|break|gym|workout|commute|travel time|prep|hold|busy|ooo|out of office|do not schedule|reminder|birthday|holiday)\b/i
 
+  /**
+   * A recurring block you keep for yourself — the gym, a focus hour, the
+   * commute. Narrower than ROUTINE on purpose: that one also swallows
+   * birthdays and holidays, which are the whole point of the key dates
+   * section, so using it there would empty the thing it was meant to fill.
+   */
+  var ROUTINE_BLOCK = /\b(routine|block|focus|lunch|break|gym|workout|commute|travel time|prep|hold|busy|ooo|out of office|do not schedule)\b/i
+
+  function isRoutine(ev) {
+    return ROUTINE_BLOCK.test(ev.title || '')
+  }
+
   function isMeeting(ev) {
     if (ev.allDay) return false
     if (ROUTINE.test(ev.title || '')) return false
@@ -1176,6 +1235,11 @@
   }
 
   function hoursOf(ev) {
+    // An all-day event is a date marker — a holiday, a birthday, a trip — not
+    // 24 hours of your time. Counting it as a full day made every per-category
+    // total meaningless: one holiday outweighed a fortnight of real meetings.
+    // Those belong in key dates, which is where they are shown.
+    if (ev.allDay) return 0
     var a = new Date(ev.start).getTime()
     var b = new Date(ev.end).getTime()
     if (!isFinite(a) || !isFinite(b) || b <= a) return 0
@@ -2755,9 +2819,14 @@
     // wipe below, so a section change cannot destroy it.
     salvageCalendarParts()
 
+    // Recorded before rendering: the store is what the routines section reads,
+    // and an occurrence seen only in this sync must survive the next one.
+    noteRoutines(events)
+
     var body
     if (calSection === 'deadlines') body = keyDatesHtml(events) + deadlinesHtml(picked)
     else if (calSection === 'meetings') body = meetingsHtml(picked)
+    else if (calSection === 'routines') body = routinesHtml()
     else if (calSection === 'load') body = loadHtml(picked)
     else body = planningHtml(picked)
 
@@ -2774,6 +2843,7 @@
     var logiSlot = document.getElementById('logi-slot')
     if (logiSlot && salvaged.logi) logiSlot.appendChild(salvaged.logi)
     trimLogistics()
+    wireRoutines(host)
 
     if (!host.dataset.picker) {
       host.dataset.picker = '1'
@@ -2802,6 +2872,7 @@
   function hoursDashboardHtml(events) {
     var weekEnd = Date.now() + 7 * 86400000
     var inWeek = (events || []).filter(function (ev) {
+      if (ev.allDay) return false   // no hours to account for; see hoursOf
       var t = new Date(ev.start).getTime()
       return isFinite(t) && t >= Date.now() && t <= weekEnd
     })
@@ -3070,6 +3141,8 @@
     ;(events || []).forEach(function (ev) {
       var t = new Date(ev.start).getTime()
       if (!isFinite(t) || t < now - 86400000 || t > horizon) return
+      // A recurring block is not a key date, however it is worded.
+      if (isRoutine(ev)) return
       var kind = keyKindOf(ev)
       if (!kind) return
       ;(groups[kind.key] = groups[kind.key] || []).push(ev)
@@ -3155,6 +3228,7 @@
   var CAL_SECTIONS = [
     { key: 'deadlines', label: '⏱️ Deadlines' },
     { key: 'meetings', label: '🤝 Meetings' },
+    { key: 'routines', label: '🔁 Routines' },
     { key: 'planning', label: '🧭 Suggested planning' },
     { key: 'load', label: '⚖️ Load balancing' },
   ]
@@ -3177,6 +3251,9 @@
     ;(events || []).forEach(function (ev) {
       var t = new Date(ev.start).getTime()
       if (!isFinite(t) || t < Date.now()) return
+      // A block you keep for yourself is not a deadline, and it is listed —
+      // with a tick box — in Routines.
+      if (isRoutine(ev)) return
       rows.push({ when: t, title: ev.title, kind: 'event', href: eventHref(ev),
         meta: (ev.calendar || 'Calendar') })
     })
@@ -3209,6 +3286,208 @@
   /** Meetings: the week grid, plus the prep blocks that feed it. */
   function meetingsHtml(future) {
     return weekAheadHtml(future)
+  }
+
+  // ---- routines: the blocks you keep, and whether you kept them -----------
+
+  /**
+   * Routines are the only thing on the calendar you can fail quietly.
+   *
+   * A meeting that did not happen leaves a trace — someone was waiting. The
+   * gym at seven does not: it simply passes. So they get their own section
+   * with a box to tick and somewhere to say what happened, rather than sitting
+   * among the meetings where the only question is when they start.
+   *
+   * The record has to outlive the calendar data. Events are fetched from now
+   * forward, so this morning's occurrence is gone from the API by tomorrow —
+   * and a completion log that erases itself nightly is not a log. Each
+   * occurrence is therefore written down the first time it is seen, and the
+   * section renders from that store rather than from the fetch.
+   */
+  var ROUTINE_BACK_DAYS = 7
+  var ROUTINE_KEEP_DAYS = 60
+
+  function routineStore() {
+    own.routines = own.routines || {}
+    return own.routines
+  }
+
+  /** Record every routine occurrence in view, so it survives the next sync. */
+  function noteRoutines(events) {
+    var store = routineStore()
+    var changed = false
+    ;(events || []).forEach(function (ev) {
+      if (!isRoutine(ev)) return
+      var key = syncKey('rt', ev.id || (ev.title + ev.start))
+      var when = new Date(ev.start).getTime()
+      if (!isFinite(when)) return
+      if (!store[key]) {
+        store[key] = { title: ev.title || 'Routine', when: ev.start,
+          allDay: !!ev.allDay, cal: ev.calendar || '', done: false, note: '' }
+        changed = true
+      } else if (store[key].title !== (ev.title || 'Routine')) {
+        store[key].title = ev.title || 'Routine'
+        changed = true
+      }
+    })
+    // Forget occurrences too old to be worth reviewing.
+    var floor = Date.now() - ROUTINE_KEEP_DAYS * 86400000
+    Object.keys(store).forEach(function (k) {
+      var t = new Date(store[k].when).getTime()
+      if (isFinite(t) && t < floor) { delete store[k]; changed = true }
+    })
+    if (changed) saveOwn()
+  }
+
+  function routineRows() {
+    var store = routineStore()
+    var from = Date.now() - ROUTINE_BACK_DAYS * 86400000
+    var to = Date.now() + CAL_LOOKAHEAD_DAYS * 86400000
+    return Object.keys(store)
+      .map(function (k) {
+        var r = store[k]
+        return { key: k, title: r.title, when: new Date(r.when).getTime(),
+          iso: r.when, done: !!r.done, note: r.note || '', cal: r.cal || '' }
+      })
+      .filter(function (r) {
+        if (!isFinite(r.when) || r.when < from || r.when > to) return false
+        return matchesFilter(eventCategory({ title: r.title }), '')
+      })
+      .sort(function (a, b) { return a.when - b.when })
+  }
+
+  function routinesHtml() {
+    var rows = routineRows()
+    var now = Date.now()
+    var past = rows.filter(function (r) { return r.when < now })
+    var doneCount = past.filter(function (r) { return r.done }).length
+
+    var head = '<div class="section-head"><h2>🔁 Routines</h2>' +
+      '<span class="sub">' +
+      (rows.length
+        ? 'The blocks you keep for yourself · ' + doneCount + ' of ' + past.length +
+          ' kept so far · tick one off, and add a note if it needs one'
+        : 'Nothing on your calendar looks like a recurring block yet') +
+      '</span></div>'
+    if (!rows.length) {
+      return head + '<p class="note">Routines are picked up from the calendar — ' +
+        'anything named like a block you keep (gym, focus, commute, lunch).</p>'
+    }
+
+    // Grouped by the routine itself: "did I go to the gym this week" is a
+    // question about one routine over several days, not about one morning.
+    var groups = {}
+    rows.forEach(function (r) { (groups[r.title] = groups[r.title] || []).push(r) })
+
+    return head + '<div class="rt-groups">' + Object.keys(groups).map(function (title) {
+      var list = groups[title]
+      var over = list.filter(function (r) { return r.when < now })
+      var kept = over.filter(function (r) { return r.done }).length
+      return '<section class="rt-group">' +
+        '<header class="rt-group__head">' +
+        '<h3 class="rt-group__name">' + esc(title) + '</h3>' +
+        '<span class="rt-group__score mono">' + routineScore(kept, over.length, list.length) +
+        '</span>' +
+        '</header>' +
+        list.map(function (r) {
+          var missed = r.when < now && !r.done
+          return '<div class="rt-row' + (r.done ? ' is-kept' : '') +
+            (missed ? ' is-missed' : '') + '" data-rt="' + esc(r.key) + '">' +
+            '<label class="rt-tick">' +
+            '<input type="checkbox" class="rt-done"' + (r.done ? ' checked' : '') + '>' +
+            '</label>' +
+            '<span class="rt-when mono">' + esc(routineWhen(r.iso)) + '</span>' +
+            '<span class="rt-state">' +
+            (r.done ? 'kept' : missed ? 'missed' : 'ahead') + '</span>' +
+            '<button type="button" class="rt-note-btn" title="Add or edit a note">' +
+            (r.note ? '📝 note' : '📝') + '</button>' +
+            '<div class="rt-note' + (r.note ? '' : ' is-hidden') + '">' +
+            '<textarea class="rt-note-in" rows="2" placeholder="What happened?">' +
+            esc(r.note) + '</textarea></div>' +
+            '</div>'
+        }).join('') +
+        '</section>'
+    }).join('') + '</div>'
+  }
+
+  /** None of them past yet is not a score of nought — it is nothing due. */
+  function routineScore(kept, past, total) {
+    if (!past) return total + (total === 1 ? ' ahead' : ' ahead')
+    return kept + '/' + past + ' kept'
+  }
+
+  function routineWhen(iso) {
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) +
+      ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
+  /** Ticking and note-taking, delegated so re-renders keep working. */
+  function wireRoutines(host) {
+    if (!host || host.dataset.rtWired) return
+    host.dataset.rtWired = '1'
+
+    host.addEventListener('change', function (e) {
+      var box = e.target.closest('.rt-done')
+      if (!box) return
+      var row = box.closest('.rt-row')
+      var rec = routineStore()[row.dataset.rt]
+      if (!rec) return
+      rec.done = box.checked
+      rec.doneAt = box.checked ? new Date().toISOString() : null
+      saveOwn()
+      // Repaint this row only: re-rendering the section would take the focus
+      // and any half-typed note with it.
+      var past = new Date(rec.when).getTime() < Date.now()
+      row.classList.toggle('is-kept', rec.done)
+      row.classList.toggle('is-missed', past && !rec.done)
+      var state = row.querySelector('.rt-state')
+      if (state) state.textContent = rec.done ? 'kept' : past ? 'missed' : 'ahead'
+      repaintRoutineScores(host)
+    })
+
+    host.addEventListener('click', function (e) {
+      var btn = e.target.closest('.rt-note-btn')
+      if (!btn) return
+      var note = btn.closest('.rt-row').querySelector('.rt-note')
+      note.classList.toggle('is-hidden')
+      if (!note.classList.contains('is-hidden')) note.querySelector('textarea').focus()
+    })
+
+    // Save on blur rather than per keystroke: this writes to localStorage.
+    host.addEventListener('blur', function (e) {
+      var area = e.target.closest('.rt-note-in')
+      if (!area) return
+      var row = area.closest('.rt-row')
+      var rec = routineStore()[row.dataset.rt]
+      if (!rec) return
+      var next = area.value.trim()
+      if (rec.note === next) return
+      rec.note = next
+      saveOwn()
+      var btn = row.querySelector('.rt-note-btn')
+      if (btn) btn.textContent = next ? '📝 note' : '📝'
+    }, true)
+  }
+
+  function repaintRoutineScores(host) {
+    var now = Date.now()
+    Array.prototype.forEach.call(host.querySelectorAll('.rt-group'), function (group) {
+      var rows = group.querySelectorAll('.rt-row')
+      var over = 0
+      var kept = 0
+      Array.prototype.forEach.call(rows, function (row) {
+        var rec = routineStore()[row.dataset.rt]
+        if (!rec) return
+        if (new Date(rec.when).getTime() < now) {
+          over++
+          if (rec.done) kept++
+        }
+      })
+      var score = group.querySelector('.rt-group__score')
+      if (score) score.textContent = routineScore(kept, over, rows.length)
+    })
   }
 
   // ---- suggested planning: prep blocks and the travel they imply ----------
@@ -3404,7 +3683,7 @@
   var onePagePanel = null
   var OPEN_SECS_KEY = 'ak-digest-onepage-open'
 
-  var OP_ALL_SECTIONS = ['deadlines', 'meetings', 'planning', 'load']
+  var OP_ALL_SECTIONS = ['deadlines', 'meetings', 'routines', 'planning', 'load']
 
   function openSections() {
     try {
@@ -3565,6 +3844,7 @@
       tabBtn.textContent = '🗓️ ' + todayLabel()
     }
 
+    noteRoutines(events)
     document.getElementById('onepage-items').innerHTML = onePageItemsHtml()
 
     document.getElementById('onepage-cal').innerHTML =
@@ -3574,11 +3854,14 @@
       keyDatesHtml(events) +
       opSection('deadlines', '⏱️ Deadlines', deadlinesHtml(future)) +
       opSection('meetings', '🤝 Meetings', meetingsHtml(future)) +
+      opSection('routines', '🔁 Routines', routinesHtml()) +
       opSection('planning', '🧭 Suggested planning', travelHtml(future)) +
       // The load view without its category picker: that picker drives the
       // Calendar tab's own render, and a second copy here would move a
       // selection the reader cannot see.
       opSection('load', '⚖️ Load balancing', hoursDashboardHtml(future))
+
+    wireRoutines(document.getElementById('onepage-cal'))
 
     renderInbox(mail)
 
