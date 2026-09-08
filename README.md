@@ -12,12 +12,22 @@ Checking any item queues it to the punch list, which persists in your browser
 across weekly rebuilds; ✓ closes an item as done and ✕ closes it as not needed,
 and both stay reopenable from the punch list.
 
-The app shell hoists the digest's **tab row** out of the iframe and puts it
-under the header. It reads the briefing's `window.__nexusDigest` API rather
-than duplicating its state, so a rebuilt page that renames or adds a tab needs
-no change in the shell. (A category filter used to sit above it; a second
-filter over a page already organised by category was one more control to keep
-in step with the thing it filtered, so it is gone.)
+The app shell hoists two controls out of the iframe and stacks them under the
+header: a **category filter** (All, Critical, Personal, Kids, Health, Finances,
+Home, Lifestyle — multi-select, remembered) and the digest's own **tab row**.
+Both read the briefing's `window.__nexusDigest` API rather than duplicating its
+state, so a rebuilt page that renames or adds a tab needs no change in the
+shell. The filter reaches the punch list (including the page's own grouped rows
+below the board), the calendar, the mail and the dated home tab.
+
+A third-party stylesheet must not be able to stop any of that loading. The
+briefing pulls its fonts from `fonts.googleapis.com` in `<head>` and its script
+is `defer`red after it — and a render-blocking stylesheet blocks deferred
+scripts too, so on a network where that request hangs rather than fails the
+document sits in `readyState: "loading"` for ever: no data, no tabs, no error,
+and the deferred script that would have reported it never runs either.
+`WeeklyBriefing` watches for that and takes cross-origin stylesheets out of the
+critical path, restoring them if they do arrive.
 
 The first tab is **today's date**, and it is where you land: every view at
 once — the open items, the calendar as four expandable sections, the inbox

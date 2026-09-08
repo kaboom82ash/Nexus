@@ -14,6 +14,7 @@ import { TabBar } from './components/TabBar'
 import { DashboardGrid } from './components/DashboardGrid'
 import { WidgetPicker } from './components/WidgetPicker'
 import { GoogleAuthBar } from './components/GoogleAuthBar'
+import { CategoryBar } from './components/CategoryBar'
 import { TabStrip } from './components/TabStrip'
 import { ActionsMenu } from './components/ActionsMenu'
 import { GlobalSettings } from './components/GlobalSettings'
@@ -215,12 +216,13 @@ export default function App() {
         </div>
       )}
 
-      {/* The digest's own sections, hoisted out of the iframe. The category
-          chips that used to sit above these are gone: a second filter over a
-          page already organised by category was a control to keep in step
-          with the thing it filtered. */}
+      {/* One filter for the whole digest, above the sections it governs. It
+          sits outside the iframe because it applies to every tab at once, and
+          because the page it drives is rebuilt weekly — a control written into
+          that file would keep having to be put back. */}
       {onHome && (
         <div className="digestbar">
+          <CategoryBar />
           <TabStrip />
         </div>
       )}

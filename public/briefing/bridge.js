@@ -927,6 +927,9 @@
       applyClosed()
       if (typeof renderPunchList === 'function') renderPunchList()
       if (typeof renderDashboard === 'function') renderDashboard()
+      // renderPunchList rewrites the list wholesale, taking the filter's
+      // classes with it, so the filter has to be laid back over the result.
+      applyFilterToStaticRows()
     } catch (e) {
       /* the page's own rendering is best-effort here — live rows still show */
     }
@@ -1798,16 +1801,11 @@
    * them apart would mean two filters that have to be reasoned about together.
    */
   var FILTER_KEY = 'ak-digest-filters'
-  /**
-   * Empty means everything, which is now the only state there is: the category
-   * chips that drove this are gone from the top of the app. A selection left
-   * in storage from before would hide most of the page with no control on
-   * screen to explain it or undo it, so any stored one is cleared here rather
-   * than adopted.
-   */
+  /** Empty means everything; the app's category chips drive it. */
   var activeFilters = (function () {
     try {
-      localStorage.removeItem(FILTER_KEY)
+      var raw = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null')
+      if (Array.isArray(raw)) return raw
     } catch (e) {}
     return []
   })()
@@ -1862,6 +1860,32 @@
    * shown or hidden in place. `data-cat` is the page's own category marker.
    */
   function applyFilterToStaticRows() {
+    // The page's own punch-list rows carry the entry id, so they can be
+    // filtered on the entry's real category and severity rather than on
+    // anything inferred from their text. Without this the filter reached the
+    // Monitor board at the top of the tab but not the list underneath it,
+    // which is most of what the punch list actually is.
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#punchlist-root .punch-row'),
+      function (row) {
+        var id = row.dataset.id
+        var e = null
+        try {
+          e = id && STATE.punchlist ? STATE.punchlist[id] : null
+        } catch (err) {}
+        row.classList.toggle('is-filtered', !!e && !entryPasses(e))
+      },
+    )
+    // A group whose every row is filtered out is an empty heading.
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#punchlist-root .punch-group'),
+      function (group) {
+        var all = group.querySelectorAll('.punch-row')
+        var hidden = group.querySelectorAll('.punch-row.is-filtered')
+        group.classList.toggle('is-filtered', all.length > 0 && all.length === hidden.length)
+      },
+    )
+
     var rows = document.querySelectorAll('main .cat-row, main .card')
     Array.prototype.forEach.call(rows, function (row) {
       if (row.classList.contains('mail-card')) return   // ours; already filtered

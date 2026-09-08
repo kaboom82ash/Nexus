@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { installBriefingBridge } from '../lib/briefingBridge'
 
 /**
@@ -42,13 +42,57 @@ function ensureIntegration(doc: Document, base: string): void {
   }
 }
 
+/**
+ * A third-party stylesheet must not be able to stop the briefing loading.
+ *
+ * The page pulls its fonts from fonts.googleapis.com in `<head>`, and its
+ * script — ours included — is `defer`red after it. A render-blocking
+ * stylesheet blocks deferred scripts too, so on a network where that request
+ * hangs rather than fails (a corporate proxy, a blocker, a bad DNS answer) the
+ * document sits in readyState "loading" for ever: no live data, no tabs, no
+ * error, and the deferred script that would report it never runs either.
+ *
+ * So if the frame is still parsing after a grace period, take the cross-origin
+ * stylesheets out of the critical path by giving them a media query that does
+ * not match. Parsing resumes, the scripts run, and if the fonts do turn up
+ * later they are put back into use.
+ */
+const STALL_GRACE_MS = 4000
+
+function unblockStalledFrame(doc: Document): boolean {
+  if (doc.readyState !== 'loading') return false
+  const links = doc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
+  let freed = false
+  links.forEach((link) => {
+    if (!/^https?:/i.test(link.getAttribute('href') ?? '')) return
+    if (link.dataset.nexusUnblocked) return
+    link.dataset.nexusUnblocked = '1'
+    link.media = 'print'
+    // Put it back once it finally arrives, so the page still gets its fonts.
+    link.addEventListener('load', () => {
+      link.media = 'all'
+    })
+    freed = true
+  })
+  return freed
+}
+
 export function WeeklyBriefing({ reloadSignal = 0 }: { reloadSignal?: number }) {
+  const frameRef = useRef<HTMLIFrameElement>(null)
   const base = import.meta.env.BASE_URL
   const src = `${base}weekly-briefing.html`
   // Changing the key remounts the iframe, which is a clean reload that also
   // works cross-document without touching contentWindow. The Actions menu
   // owns the control; this only reacts to it.
   const reloadKey = reloadSignal
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const doc = frameRef.current?.contentDocument
+      if (doc) unblockStalledFrame(doc)
+    }, STALL_GRACE_MS)
+    return () => clearTimeout(timer)
+  }, [reloadSignal])
 
   const onLoad = useCallback(
     (e: React.SyntheticEvent<HTMLIFrameElement>) => {
@@ -63,6 +107,7 @@ export function WeeklyBriefing({ reloadSignal = 0 }: { reloadSignal?: number }) 
   return (
     <div className="briefing">
       <iframe
+        ref={frameRef}
         key={reloadKey}
         className="briefing__frame"
         src={src}
