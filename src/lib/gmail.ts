@@ -1033,6 +1033,8 @@ export interface EmailSummary {
   score: number
   /** Short human-readable reasons the score was assigned. */
   reasons: string[]
+  /** Gmail's preview of the message — the first line or so of its text. */
+  snippet: string
   /** Deep link to open this message in Gmail on the web (empty for mock data). */
   url: string
 }
@@ -1129,6 +1131,8 @@ interface GmailMessageMeta {
   threadId: string
   labelIds?: string[]
   internalDate?: string
+  /** Gmail's own preview line. Returned with format=metadata, no body needed. */
+  snippet?: string
   payload?: { headers?: { name: string; value: string }[] }
 }
 
@@ -1280,8 +1284,23 @@ function metaToSummary(meta: GmailMessageMeta): EmailSummary {
     category: categoryFromLabels(labels),
     score,
     reasons,
+    // Gmail's snippet arrives HTML-escaped (&amp;, &#39;); it is shown as text.
+    snippet: decodeEntities(meta.snippet ?? ''),
     url: gmailWebUrl(meta.id),
   }
+}
+
+/** Turn the handful of entities Gmail puts in a snippet back into characters. */
+function decodeEntities(text: string): string {
+  if (!text || text.indexOf('&') === -1) return text
+  return text
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
 }
 
 export interface TopEmailsOptions {
@@ -1693,6 +1712,7 @@ function mockTopEmails(): EmailSummary[] {
     return {
       id: p.id ?? p.subject,
       threadId: p.id ?? p.subject,
+      snippet: p.snippet ?? `Sample preview of "${p.subject}".`,
       fromEmail: p.fromEmail ?? from,
       date: p.date ?? mins(30),
       unread: labels.includes('UNREAD'),

@@ -33,6 +33,12 @@ export interface CalendarEvent {
   location: string
   /** The API's own event link — constructed eids do not reliably work. */
   url: string
+  /**
+   * An instance of a repeating series. Google says so directly, which beats
+   * guessing from the title: the things people actually repeat are named
+   * "Ava Spanish — Mon/Wed", not "recurring block".
+   */
+  recurring: boolean
   /** Display name of the calendar the event came from. */
   calendar: string
 }
@@ -69,6 +75,8 @@ interface RawCalendarListEntry {
 interface RawEvent {
   id: string
   status?: string
+  recurringEventId?: string
+  recurrence?: string[]
   summary?: string
   location?: string
   htmlLink?: string
@@ -153,6 +161,7 @@ function toEvent(raw: RawEvent, calendarName: string): CalendarEvent | null {
   if (Number.isNaN(start.getTime())) return null
   return {
     id: raw.id,
+    recurring: !!(raw.recurringEventId || (raw.recurrence && raw.recurrence.length)),
     title: raw.summary?.trim() || '(no title)',
     start: start.toISOString(),
     end: (Number.isNaN(end.getTime()) ? start : end).toISOString(),
@@ -224,6 +233,7 @@ function mockEvents(days: number): CalendarEvent[] {
       const end = new Date(start.getTime() + s.mins * 60_000)
       return {
         id: `mock-${i}`,
+        recurring: s.inDays === 0,   // the school run repeats; the rest do not
         title: s.title,
         start: start.toISOString(),
         end: end.toISOString(),

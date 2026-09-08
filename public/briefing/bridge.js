@@ -369,215 +369,99 @@
     '.mailcat--finance .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-finance)}',
     '.mailcat--health .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-health)}',
     '.mailcat--lifestyle .mailcat__head{box-shadow:inset 0 3px 0 var(--cat-lifestyle)}',
-    '.mailcat__grid{display:grid;gap:10px;padding:14px 16px;',
-    'grid-template-columns:repeat(auto-fill,minmax(285px,1fr))}',
+    '.mailcat__grid{display:flex;flex-direction:column;padding:0}',
 
-    // A card. Severity is a left bar, not a fill: a grid of saturated tiles is
-    // a wall of colour, and the colour is there to make ONE card stand out.
-    '.cat-row.mail-card{display:block;max-width:none;width:auto;margin:0;',
-    'padding:12px 14px 10px;border:1px solid var(--line);border-left:3px solid var(--line);',
-    'border-radius:10px;background:var(--surface-2);color:var(--ink);',
-    'transition:border-color .12s,transform .12s}',
-    '.cat-row.mail-card:hover{transform:translateY(-1px);border-color:var(--accent)}',
-    '.cat-row.mail-card.sev-critical{background:var(--surface-2);color:var(--ink);',
-    'border-left-color:var(--critical)}',
-    '.cat-row.mail-card.sev-high{background:var(--surface-2);color:var(--ink);',
-    'border-left-color:var(--high)}',
-    '.cat-row.mail-card.sev-medium{background:var(--surface-2);color:var(--ink);',
-    'border-left-color:var(--medium)}',
-    '.cat-row.mail-card.sev-low{background:var(--surface-2);color:var(--ink);',
-    'border-left-color:var(--low)}',
-    '.mail-card--unread{background:var(--surface)}',
-    '.mail-card__body{display:block}',
-    '.mail-card__top{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}',
-    '.mail-card__from{flex:1;min-width:0;font-size:11.5px;font-weight:600;',
-    'color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '.mail-card__when{flex:0 0 auto;font-size:10.5px;color:var(--muted)}',
-    '.cat-row .mail-card__subj{font-size:14px;font-weight:600;line-height:1.35;',
-    'color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;',
-    'overflow:hidden;margin-bottom:8px}',
-    '.mail-card__tags{display:flex;align-items:center;gap:6px;margin-bottom:9px;',
-    'min-height:16px}',
-    '.mail-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);',
-    'display:inline-block;flex:0 0 auto}',
-    '.mail-card__sev{font-size:9.5px;font-weight:700;text-transform:uppercase;',
+    // One email per line: when it arrived, who from, the subject, and Gmail's
+    // own preview underneath. A grid of cards looked tidy and made scanning a
+    // morning's mail slower — you read down a column, not across a page.
+    '.mail-pickbar{display:flex;align-items:center;gap:10px;padding:9px 14px;',
+    'margin-bottom:12px;border:1px dashed var(--line);border-radius:10px;',
+    'background:var(--surface);opacity:.55}',
+    '.mail-pickbar.is-on{opacity:1;border-style:solid;border-color:var(--accent)}',
+    '.mail-pickbar__n{font-size:12.5px;font-weight:600;margin-right:auto}',
+    '.mail-pickbar:not(.is-on) .mail-pickbar__draft,',
+    '.mail-pickbar:not(.is-on) .mail-pickbar__clear{display:none}',
+
+    // The row is the flex container, so the checkbox the page injects as its
+    // first child lands IN the line rather than stranded above it.
+    '.cat-row.mail-line{display:flex;align-items:flex-start;gap:10px;',
+    'max-width:none;width:auto;margin:0;padding:11px 16px;border:none;',
+    'border-top:1px solid var(--line);border-left:3px solid transparent;',
+    'border-radius:0}',
+    '.mailcat__grid > .mail-line:first-child{border-top:none}',
+    '.mail-line__body{display:flex;align-items:flex-start;gap:12px;flex:1;min-width:0}',
+    // Severity is the left edge, not the fill. These need one class more than
+    // the page's own `.cat-row.sev-*` rules, which paint the whole tile — at
+    // equal specificity those come later and win, and a list of full-bleed
+    // colour blocks is unreadable at a glance, which is the point of a list.
+    '.cat-row.mail-line.sev-critical,.cat-row.mail-line.sev-high,',
+    '.cat-row.mail-line.sev-medium,.cat-row.mail-line.sev-low{',
+    'background:transparent;color:var(--ink)}',
+    '.cat-row.mail-line.sev-critical{border-left-color:var(--critical)}',
+    '.cat-row.mail-line.sev-high{border-left-color:var(--high)}',
+    '.cat-row.mail-line.sev-medium{border-left-color:var(--medium)}',
+    '.cat-row.mail-line.sev-low{border-left-color:var(--low)}',
+    '.cat-row.mail-line:hover{background:var(--surface-2)}',
+    '.cat-row.mail-line.is-picked{background:rgba(99,102,241,.16)}',
+
+    // The date leads, at a size you can read down the page.
+    '.mail-line__at{flex:0 0 92px;display:flex;flex-direction:column;gap:1px;',
+    'padding-top:1px}',
+    '.cat-row.mail-line .mail-line__day{font-size:12.5px;font-weight:700;',
+    'color:var(--ink);white-space:nowrap}',
+    '.cat-row.mail-line .mail-line__time{font-size:15px;font-weight:700;',
+    'line-height:1.15;color:var(--accent);white-space:nowrap}',
+
+    // Two tick boxes sit on one row — the page's, which queues an item to the
+    // punch list, and this one, which picks the message for drafting. They do
+    // very different things, so this one carries its verb.
+    '.mail-pick{flex:0 0 auto;display:flex;align-items:center;gap:3px;',
+    'padding:2px 5px 2px 3px;border:1px solid var(--line);border-radius:7px;',
+    'cursor:pointer;align-self:flex-start;margin-top:1px}',
+    '.mail-pick:hover{border-color:var(--accent)}',
+    '.mail-pick__icon{font-size:11px;line-height:1;opacity:.75}',
+    '.mail-pick__box{width:14px;height:14px;cursor:pointer;margin:0}',
+    '.mail-line.is-picked .mail-pick{border-color:var(--accent);',
+    'background:rgba(99,102,241,.22)}',
+    '.mail-line.is-picked .mail-pick__icon{opacity:1}',
+
+    '.mail-line__text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}',
+    '.mail-line__top{display:flex;align-items:center;gap:7px;min-width:0}',
+    '.cat-row.mail-line .mail-line__from{font-size:11.5px;font-weight:600;',
+    'color:var(--muted);overflow:hidden;text-overflow:ellipsis;',
+    'white-space:nowrap;max-width:230px}',
+    '.cat-row .mail-line__subj{font-size:14px;font-weight:600;line-height:1.3;',
+    'color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.mail-line--unread .mail-line__subj{font-weight:700}',
+    '.cat-row.mail-line .mail-line__prev{font-size:12px;line-height:1.4;',
+    'color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;',
+    '-webkit-box-orient:vertical;overflow:hidden}',
+    '.mail-line__sev{font-size:9.5px;font-weight:700;text-transform:uppercase;',
     'letter-spacing:.06em;padding:1px 6px;border-radius:4px;color:#0b0f16}',
-    '.mail-card__sev--critical{background:var(--critical)}',
-    '.mail-card__sev--high{background:var(--high)}',
-    '.mail-card__sev--medium{background:var(--medium)}',
-    '.mail-card__sev--low{background:var(--low)}',
-    // The card's footer is one zone, not two. Our actions and the page's own
-    // quick actions are separate elements, and giving each its own bordered
-    // strip stacked two rules inside a small card — so only the first carries
-    // the rule and the rest flow underneath it.
-    '.mail-card .cat-links{display:flex;gap:5px;align-items:center;flex-wrap:wrap;',
-    'margin:0;padding-top:9px;border-top:1px solid var(--line)}',
-    '.mail-card .qa-strip{display:flex;gap:5px;align-items:center;flex-wrap:wrap;',
-    'margin:6px 0 0;padding:0;border:none}',
-    '.mail-act,.mail-card .qa-btn,.mail-card .close-btn{padding:3px 8px;font-size:12.5px;',
-    'line-height:1.4;text-decoration:none;border-radius:7px;',
+    '.mail-line__sev--critical{background:var(--critical)}',
+    '.mail-line__sev--high{background:var(--high)}',
+    '.mail-line__sev--medium{background:var(--medium)}',
+    '.mail-line__sev--low{background:var(--low)}',
+
+    // Actions stay on one row at the right, out of the subject's way.
+    '.mail-line .cat-links{display:flex;gap:5px;align-items:center;flex-wrap:wrap;',
+    'justify-content:flex-end;margin:0;padding:0;border:none;flex:0 0 auto;',
+    'max-width:270px}',
+    '.mail-line .qa-strip{display:flex;gap:5px;align-items:center;flex-wrap:wrap;',
+    'justify-content:flex-end;margin:0;padding:0;border:none}',
+    '.mail-act,.mail-line .qa-btn,.mail-line .close-btn{padding:3px 8px;',
+    'font-size:12.5px;line-height:1.4;text-decoration:none;border-radius:7px;',
     'border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}',
-    '.mail-act:hover,.mail-card .qa-btn:hover,.mail-card .close-btn:hover{',
+    '.mail-act:hover,.mail-line .qa-btn:hover,.mail-line .close-btn:hover{',
     'border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}',
-    '.mail-card .close-btn{margin-left:0}',
-    '.mail-card .dismiss-btn{margin-left:0}',
-    '.mail-card select{font:inherit;font-size:11.5px;padding:2px 6px;border-radius:7px;',
-    'border:1px solid var(--line);background:var(--surface);color:var(--ink);',
-    'max-width:120px}',
-    // The page puts its checkbox at the top of the row; on a card it belongs
-    // beside the sender rather than on a line of its own.
-    '.mail-card input[type="checkbox"]{margin:0 0 6px}',
-    // The page appends its own .qa-group (calendar/reminder/note/flag +
-    // status) as a separate block. On a one-line row it has to sit inline
-    // with everything else, or "all buttons in one row" is two.
-    // Wide screens get a true single line; narrow ones may wrap, which is
-    // the right trade rather than a horizontal scrollbar.
-
-    '.mon-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}',
-    '.mon-q{flex:1 1 240px}',
-    '.mon-count{color:var(--muted);font-size:12px;margin-bottom:10px;',
-    'font-family:"IBM Plex Mono",monospace}',
-    '.mon-chip{font-size:11px;padding:1px 7px;border-radius:999px;',
-    'border:1px solid var(--line);color:var(--muted)}',
-    '.mon-chip--done{color:var(--low);border-color:var(--low)}',
-    '.mon-chip--wait{color:var(--high);border-color:var(--high)}',
-    '.mon-err{color:var(--critical)}',
-    '.mon-thread{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}',
-    '.mon-thread-toggle{cursor:pointer;font-size:12px;color:var(--accent);',
-    'font-weight:600;list-style:none}',
-    '.mon-thread-toggle::-webkit-details-marker{display:none}',
-    '.mon-thread-toggle::before{content:"▸ ";}',
-    '.mon-thread[open] .mon-thread-toggle::before{content:"▾ ";}',
-    '.mon-thread__head{margin:8px 0;font-size:12.5px;display:flex;gap:8px;',
-    'align-items:center;flex-wrap:wrap}',
-    '.mon-timeline{list-style:none;margin:0;padding:0 0 0 14px;',
-    'border-left:2px solid var(--line)}',
-    '.mon-msg{position:relative;padding:0 0 12px 12px}',
-    '.mon-msg::before{content:"";position:absolute;left:-19px;top:4px;width:8px;',
-    'height:8px;border-radius:50%;background:var(--muted)}',
-    '.mon-msg--out::before{background:var(--accent)}',
-    '.mon-msg__who{font-weight:600;font-size:12.5px}',
-    '.mon-msg__when{color:var(--muted);font-weight:400;margin-left:8px;',
-    'font-family:"IBM Plex Mono",monospace;font-size:11px}',
-    '.mon-msg__snippet{color:var(--muted);font-size:12px;margin:2px 0 3px}',
-
-    '.mon-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;',
-    'align-items:start}',
-    '@media (max-width:1000px){.mon-board{grid-template-columns:repeat(2,minmax(0,1fr))}}',
-    '@media (max-width:620px){.mon-board{grid-template-columns:1fr}}',
-    '.mon-col__head{font-weight:700;font-size:12px;text-transform:uppercase;',
-    'letter-spacing:.05em;padding:0 2px 8px;display:flex;justify-content:space-between;',
-    'align-items:center;border-bottom:2px solid var(--line);margin-bottom:10px}',
-    '.mon-col--critical .mon-col__head{color:var(--critical);border-bottom-color:var(--critical)}',
-    '.mon-col--high .mon-col__head{color:var(--high);border-bottom-color:var(--high)}',
-    '.mon-col--medium .mon-col__head{color:var(--medium);border-bottom-color:var(--medium)}',
-    '.mon-col--low .mon-col__head{color:var(--low);border-bottom-color:var(--low)}',
-    '.mon-col__count{font-family:"IBM Plex Mono",monospace;font-size:12px}',
-    '.mon-col__empty{color:var(--muted);font-size:12px;padding:6px 2px}',
-    // The tile IS the severity: a solid ground, not a stripe on black.
-    '.mon-tile{border-radius:10px;padding:11px 12px;margin-bottom:10px;',
-    'box-shadow:var(--shadow);border:1px solid transparent}',
-    '.mon-tile--critical{background:var(--critical);color:#170a0a}',
-    '.mon-tile--high{background:var(--high);color:#1c1305}',
-    '.mon-tile--medium{background:var(--medium);color:#08131c}',
-    '.mon-tile--low{background:var(--low);color:#07160d}',
-    '.mon-tile__title{font-weight:700;font-size:13.5px;line-height:1.3}',
-    // Everything inside inherits the tile ink, at reduced weight, so the
-    // colour keeps its meaning instead of fighting the page tokens.
-    '.mon-tile__meta{font-size:11.5px;opacity:.78;margin-top:3px}',
-    '.mon-tile .mon-chip{border-color:currentColor;color:inherit;opacity:.85}',
-    '.mon-tile .cat-links{margin-top:7px}',
-    '.mon-tile .mail-link,.mon-tile .cal-btn{color:inherit;text-decoration:underline}',
-    '.mon-tile .mon-thread-toggle{color:inherit;opacity:.9}',
-    '.mon-tile .mon-thread{border-top-color:currentColor}',
-    '.mon-tile .note,.mon-tile .mon-msg__snippet,.mon-tile .mon-msg__when{color:inherit;opacity:.75}',
-    '.mon-tile .mon-timeline{border-left-color:currentColor}',
-    '.mon-tile .mon-msg::before{background:currentColor}',
-    '.mon-tile.is-done{opacity:.55}',
-    '.mon-section{margin-bottom:26px}',
-
-    // Tabs: bigger targets, rounded, with the active one clearly seated.
-    '.masthead .tabs{gap:8px;flex-wrap:wrap}',
-    '.masthead .tab-btn{font-size:14px;padding:11px 16px;border-radius:12px;',
-    'border:1px solid var(--line);background:var(--surface);font-weight:600;',
-    'transition:transform .08s ease,border-color .12s ease}',
-    '.masthead .tab-btn:hover{border-color:var(--accent);transform:translateY(-1px)}',
-    '.masthead .tab-btn[aria-selected="true"]{background:var(--accent);',
-    'color:var(--accent-ink);border-color:var(--accent)}',
-    '.masthead .tab-btn .count{font-size:11px;padding:1px 7px;border-radius:999px;',
-    'background:rgba(0,0,0,.18);margin-left:7px}',
-
-    // Filled tiles need air between them, or two colours meeting edge-to-edge
-    // read as one band and the severity boundary disappears.
-    '.cat-grid-items{gap:12px}',
-    '.cat-row[class*="sev-"]{margin-bottom:12px;border:2px solid var(--surface)}',
-    '.cat-grid-items .cat-row[class*="sev-"]{margin-bottom:0}',
-    '.card[class*="sev-"]{margin-bottom:14px;border:2px solid var(--surface)}',
-    '.punch-row[class*="sev-"]{margin-bottom:10px;border:2px solid var(--surface)}',
-    '.mon-tile{border:2px solid var(--surface)}',
-
-    '.glance{margin-top:4px}',
-    '.glance__head{font-size:11px;font-weight:700;letter-spacing:.06em;',
-    'text-transform:uppercase;color:var(--muted);margin:6px 0 8px}',
-    '.glance__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}',
-    '.glance__cell{border-radius:12px;padding:11px 13px;border:1px solid var(--line);',
-    'background:var(--surface);border-left-width:4px}',
-    '.glance--personal{border-left-color:var(--cat-personal)}',
-    '.glance--kids{border-left-color:var(--cat-kids)}',
-    '.glance--home{border-left-color:var(--cat-home)}',
-    '.glance--finance{border-left-color:var(--cat-finance)}',
-    '.glance--health{border-left-color:var(--cat-health)}',
-    '.glance--lifestyle{border-left-color:var(--cat-lifestyle)}',
-    '.glance__cat{font-size:12px;font-weight:700;text-transform:capitalize;margin-bottom:5px}',
-    '.glance__nums{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}',
-    '.glance__nums b{color:var(--ink);font-family:"IBM Plex Mono",monospace;font-size:13px}',
-
-    '.rank-list{border:1px solid var(--line);border-radius:12px;overflow:hidden}',
-    '.rank-row{display:flex;align-items:center;gap:12px;padding:10px 14px;',
-    'background:var(--surface);border-bottom:1px solid var(--line)}',
-    '.rank-row:last-child{border-bottom:none}',
-    '.rank-row.sev-critical{border-left:4px solid var(--critical)}',
-    '.rank-row.sev-high{border-left:4px solid var(--high)}',
-    '.rank-row.sev-medium{border-left:4px solid var(--medium)}',
-    '.rank-row.sev-low{border-left:4px solid var(--low)}',
-    '.rank-n{color:var(--muted);font-size:12px;flex:0 0 18px}',
-    '.rank-days{font-size:16px;font-weight:700;flex:0 0 52px}',
-    '.rank-days--soon{color:var(--critical)}',
-    '.rank-title{flex:1;font-size:13px}',
-    '.rank-when{color:var(--muted);font-size:11.5px}',
-
-    // One-page items: one line each, severity as the left edge rather than the
-    // whole fill — a full-bleed board here would drown the sections under it.
-    '.op-items{border:1px solid var(--line);border-radius:12px;overflow:hidden;',
-    'margin-bottom:18px}',
-    '.op-item{display:flex;align-items:center;gap:14px;padding:9px 14px;',
-    'background:var(--surface);border-bottom:1px solid var(--line);',
-    'border-left:4px solid var(--line)}',
-    '.op-item:last-child{border-bottom:none}',
-    '.op-item.sev-critical{border-left-color:var(--critical)}',
-    '.op-item.sev-high{border-left-color:var(--high)}',
-    '.op-item.sev-medium{border-left-color:var(--medium)}',
-    '.op-item.sev-low{border-left-color:var(--low)}',
-    '.op-item__due{flex:0 0 52px;font-size:13px;font-weight:700}',
-    '.op-item__t{flex:1;min-width:0;font-size:13px;overflow:hidden;',
-    'text-overflow:ellipsis;white-space:nowrap}',
-    '.op-item__cat{flex:0 0 auto;font-size:11.5px;color:var(--muted)}',
-    '.op-item__st{flex:0 0 auto;font-size:11.5px;color:var(--muted);',
-    'min-width:130px;text-align:right}',
-    '.op-item__more{padding:10px 14px}',
-
-    // One-page dashboard: each calendar view a disclosure, so all four are
-    // reachable without leaving the page.
-    '.op-sec{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;',
-    'background:var(--surface);overflow:hidden}',
-    '.op-sec__head{cursor:pointer;padding:12px 16px;font-size:14px;font-weight:700;',
-    'list-style:none;display:flex;align-items:center;gap:8px}',
-    '.op-sec__head::-webkit-details-marker{display:none}',
-    '.op-sec__head::before{content:"▸";color:var(--muted);font-size:12px}',
-    '.op-sec[open] .op-sec__head::before{content:"▾"}',
-    '.op-sec__head:hover{background:var(--surface-2)}',
-    '.op-sec__body{padding:0 16px 16px;border-top:1px solid var(--line)}',
-    '.op-sec__body .section-head{margin-top:14px}',
+    '.mail-line .close-btn,.mail-line .dismiss-btn{margin-left:0}',
+    '.mail-line select{font:inherit;font-size:11.5px;padding:2px 6px;',
+    'border-radius:7px;border:1px solid var(--line);background:var(--surface);',
+    'color:var(--ink);max-width:118px}',
+    '.mail-line input[type="checkbox"]{margin:0}',
+    '@media (max-width:900px){.cat-row.mail-line{flex-wrap:wrap}',
+    '.mail-line__body{flex-wrap:wrap}',
+    '.mail-line .cat-links{max-width:none;justify-content:flex-start}}',
 
     // Routines: a tick box, when it was, and somewhere to say what happened.
     '.rt-groups{display:flex;flex-direction:column;gap:14px}',
@@ -1224,8 +1108,16 @@
    */
   var ROUTINE_BLOCK = /\b(routine|block|focus|lunch|break|gym|workout|commute|travel time|prep|hold|busy|ooo|out of office|do not schedule)\b/i
 
+  /**
+   * Google says whether an event repeats, and that beats reading its title.
+   * The things people actually run on a schedule are named "Ava Spanish —
+   * Mon/Wed 4:00 PM" and "Maya ACT Foundations", not "recurring block", so a
+   * keyword list was never going to find them. The words still count, for a
+   * one-off you have labelled as a block you keep.
+   */
   function isRoutine(ev) {
-    return ROUTINE_BLOCK.test(ev.title || '')
+    if (ev && ev.recurring) return true
+    return ROUTINE_BLOCK.test((ev && ev.title) || '')
   }
 
   function isMeeting(ev) {
@@ -2341,31 +2233,59 @@
    * bar down the left rather than a fill: a grid of saturated tiles is a wall
    * of colour, and the point of the colour is to let one card stand out.
    */
+  /** Messages ticked for bulk drafting, by id. Not persisted: it is a gesture. */
+  var mailPicked = {}
+
   function mailCardHtml(m, mock, fresh) {
     var sev = mailSeverity(m.score)
     var when = new Date(m.date)
-    var received = isNaN(when.getTime())
-      ? ''
-      : when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
-        when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    var valid = !isNaN(when.getTime())
+    var day = valid
+      ? when.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+      : ''
+    var time = valid
+      ? when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : ''
     var isNew = (fresh || []).indexOf(m.id) !== -1
+    var preview = String(m.snippet || '').replace(/\s+/g, ' ').trim()
 
-    return '<article class="cat-row mail-card sev-' + sev +
-      (m.unread ? ' mail-card--unread' : '') + '" data-sync="' +
+    return '<article class="cat-row mail-line sev-' + sev +
+      (m.unread ? ' mail-line--unread' : '') +
+      (mailPicked[m.id] ? ' is-picked' : '') + '" data-sync="' +
       esc(syncKey('mail', m.id)) + '">' +
-      '<div class="cat-main mail-card__body">' +
-      '<div class="mail-card__top">' +
-      '<span class="mail-card__from">' + esc(m.from) + '</span>' +
-      '<span class="mail-card__when mono">' + esc(received) + '</span>' +
-      '</div>' +
-      '<div class="cat-title mail-card__subj">' + esc(m.subject) + '</div>' +
-      '<div class="mail-card__tags">' +
+      '<div class="cat-main mail-line__body">' +
+
+      // When it arrived leads the row: on a list of arrivals it is the column
+      // you scan, so it gets the left edge and a size you can read at speed.
+      '<span class="mail-line__at">' +
+      '<span class="mail-line__day">' + esc(day) + '</span>' +
+      '<span class="mail-line__time mono">' + esc(time) + '</span>' +
+      '</span>' +
+
+      (m.id
+        ? '<label class="mail-pick" title="Pick this one to draft a reply for">' +
+          '<span class="mail-pick__icon" aria-hidden="true">✍️</span>' +
+          '<input type="checkbox" class="mail-pick__box" data-mid="' + esc(m.id) +
+          '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
+          '" data-snippet="' + esc(preview) + '"' +
+          (mailPicked[m.id] ? ' checked' : '') + '></label>'
+        : '') +
+
+      '<span class="mail-line__text">' +
+      '<span class="mail-line__top">' +
+      '<span class="mail-line__from">' + esc(m.from) + '</span>' +
       (m.unread ? '<span class="mail-dot" title="Unread"></span>' : '') +
       (isNew ? '<span class="new-badge">NEW</span>' : '') +
       (mock ? '<span class="live-tag">sample</span>' : '') +
-      '<span class="mail-card__sev mail-card__sev--' + sev + '">' + sev + '</span>' +
-      '</div>' +
-      '<div class="cat-links mail-card__acts">' +
+      '<span class="mail-line__sev mail-line__sev--' + sev + '">' + sev + '</span>' +
+      '</span>' +
+      '<span class="cat-title mail-line__subj">' + esc(m.subject) + '</span>' +
+      (preview
+        ? '<span class="mail-line__prev">' + esc(preview) + '</span>'
+        : '') +
+      '</span>' +
+
+      '<span class="cat-links mail-line__acts">' +
       '<a class="mail-link mail-act" href="' + esc(mailHref(m)) +
       '" target="_blank" rel="noopener" title="Open in Gmail">✉️</a>' +
       (m.id
@@ -2373,14 +2293,93 @@
           '" data-title="' + esc(m.subject) + '" title="Start a punch-list item with this email attached">📌</button>' +
           '<button type="button" class="live-attach live-draft mail-act" data-mid="' + esc(m.id) +
           '" data-subject="' + esc(m.subject) + '" data-from="' + esc(m.from) +
-          '" data-snippet="' + esc((m.reasons || []).join(', ')) +
+          '" data-snippet="' + esc(preview) +
           '" title="Draft a reply to this message">✍️</button>'
         : '') +
       (m.id && m.unread
         ? '<button type="button" class="live-attach live-read mail-act" data-mid="' + esc(m.id) +
           '" title="Mark this read in Gmail">📖</button>'
         : '') +
-      '</div></div></article>'
+      '</span></div></article>'
+  }
+
+  /**
+   * Drafting for a handful of messages at once.
+   *
+   * Replying is the thing you do in runs — you go through the morning's mail
+   * and answer five of them — so picking those five and asking once beats
+   * pressing ✍️ five times and waiting each time. Sequential, because each
+   * draft reads its thread and firing them together bursts the same rate limit
+   * the sync already works around.
+   */
+  function pickBarHtml() {
+    var n = pickedIds().length
+    return '<div class="mail-pickbar' + (n ? ' is-on' : '') + '">' +
+      '<span class="mail-pickbar__n">' + n +
+      (n === 1 ? ' message picked' : ' messages picked') + '</span>' +
+      '<button type="button" class="live-btn mail-pickbar__draft">✍️ Draft replies</button>' +
+      '<button type="button" class="live-btn mail-pickbar__clear">Clear</button>' +
+      '</div>'
+  }
+
+  function pickedIds() {
+    return Object.keys(mailPicked).filter(function (k) { return mailPicked[k] })
+  }
+
+  function renderPickBar() {
+    var n = pickedIds().length
+    Array.prototype.forEach.call(document.querySelectorAll('.mail-pickbar'), function (bar) {
+      bar.classList.toggle('is-on', n > 0)
+      var label = bar.querySelector('.mail-pickbar__n')
+      if (label) {
+        label.textContent = n + (n === 1 ? ' message picked' : ' messages picked')
+      }
+    })
+  }
+
+  function draftPicked(bridge, btn) {
+    var ids = pickedIds()
+    if (!ids.length) return
+    var seen = {}
+    var queue = []
+    Array.prototype.forEach.call(document.querySelectorAll('.mail-pick__box'), function (box) {
+      var id = box.dataset.mid
+      if (!id || !mailPicked[id] || seen[id]) return
+      seen[id] = true
+      queue.push({ id: id, subject: box.dataset.subject || '',
+        from: box.dataset.from || '', snippet: box.dataset.snippet || '' })
+    })
+    if (!queue.length) return
+
+    btn.disabled = true
+    var was = btn.textContent
+    var done = 0
+    setStatus('Drafting ' + queue.length + ' repl' + (queue.length === 1 ? 'y' : 'ies') + '…')
+
+    var i = 0
+    function next() {
+      if (i >= queue.length) {
+        btn.disabled = false
+        btn.textContent = was
+        mailPicked = {}
+        renderDrafts(bridge)
+        refreshTabCounts()
+        redrawAll()
+        setStatus(done + ' draft' + (done === 1 ? '' : 's') + ' written — see the Drafts tab',
+          done ? 'ok' : 'warn')
+        return
+      }
+      var meta = queue[i++]
+      btn.textContent = '✍️ ' + i + '/' + queue.length + '…'
+      bridge
+        .draftReply(meta)
+        .then(function (res) {
+          if (res && res.text && !res.error) { addDraft(meta.id, meta, res.text, res.mock); done++ }
+        })
+        .catch(function () {})
+        .then(next)
+    }
+    next()
   }
 
   /**
@@ -2405,7 +2404,7 @@
         : 'Nothing in the current window') +
       '</span></div>' +
       (pool.length
-        ? categoryBandsHtml(pool, mock, fresh)
+        ? pickBarHtml() + categoryBandsHtml(pool, mock, fresh)
         : '<p class="note">No mail in this window. Widen it with "Actions from", or press Sync now.</p>')
   }
 
@@ -3323,7 +3322,8 @@
       if (!isFinite(when)) return
       if (!store[key]) {
         store[key] = { title: ev.title || 'Routine', when: ev.start,
-          allDay: !!ev.allDay, cal: ev.calendar || '', done: false, note: '' }
+          allDay: !!ev.allDay, cal: ev.calendar || '', recurring: !!ev.recurring,
+          done: false, note: '' }
         changed = true
       } else if (store[key].title !== (ev.title || 'Routine')) {
         store[key].title = ev.title || 'Routine'
@@ -3703,77 +3703,6 @@
     } catch (e) {}
   }
 
-  /**
-   * The punch list, compressed to one line each.
-   *
-   * A one-page dashboard that shows the calendar and the mail but not the work
-   * is missing the thing the other two are usually about. Hardest first, and
-   * within a severity the nearest deadline, which is the order you would work
-   * them in.
-   */
-  var OP_ITEMS_MAX = 15
-  var OP_SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 }
-
-  function onePageItemsHtml() {
-    var rows = []
-    try {
-      Object.keys(STATE.punchlist || {}).forEach(function (id) {
-        var e = STATE.punchlist[id]
-        if (!e || e.done || !entryPasses(e)) return
-        var d = deadlineFrom(e.title)
-        rows.push({
-          id: id,
-          title: e.title,
-          sev: e.severity || 'low',
-          cat: e.category || 'personal',
-          status: statusOf(id),
-          days: d ? d.days : null,
-          href: (e.links && e.links[0] && e.links[0].href) || '',
-        })
-      })
-    } catch (err) {}
-
-    rows.sort(function (a, b) {
-      var d = (OP_SEV_ORDER[a.sev] === undefined ? 9 : OP_SEV_ORDER[a.sev]) -
-        (OP_SEV_ORDER[b.sev] === undefined ? 9 : OP_SEV_ORDER[b.sev])
-      if (d !== 0) return d
-      if (a.days === null && b.days === null) return 0
-      if (a.days === null) return 1
-      if (b.days === null) return -1
-      return a.days - b.days
-    })
-
-    var mine = rows.filter(function (r) { return r.status === 'court' }).length
-    var head = '<div class="section-head"><h2>📋 Items</h2>' +
-      '<span class="sub">' +
-      (rows.length
-        ? rows.length + ' open · ' + mine + ' in your court · hardest first, then by deadline'
-        : 'Nothing open — everything on the punch list is closed') +
-      '</span></div>'
-    if (!rows.length) return head
-
-    return head + '<div class="op-items">' +
-      rows.slice(0, OP_ITEMS_MAX).map(function (r) {
-        var meta = CATEGORY_META[r.cat] || { icon: '📧', label: r.cat }
-        return '<div class="op-item sev-' + esc(r.sev) + '">' +
-          '<span class="op-item__due mono">' +
-          (r.days === null ? '—' : r.days === 0 ? 'today' : r.days + 'd') + '</span>' +
-          '<span class="op-item__t">' +
-          (r.href
-            ? '<a class="mail-link" href="' + esc(r.href) + '" target="_blank" rel="noopener">' + esc(r.title) + '</a>'
-            : esc(r.title)) +
-          '</span>' +
-          '<span class="op-item__cat">' + meta.icon + ' ' + esc(meta.label) + '</span>' +
-          '<span class="op-item__st">' + esc(statusText(r.status)) + '</span>' +
-          '</div>'
-      }).join('') +
-      (rows.length > OP_ITEMS_MAX
-        ? '<div class="note op-item__more">+' + (rows.length - OP_ITEMS_MAX) +
-          ' more on the punch list</div>'
-        : '') +
-      '</div>'
-  }
-
   /** The reader-facing name of a status code. */
   function statusText(code) {
     var out = code
@@ -3799,7 +3728,6 @@
     onePagePanel = el('div', 'panel')
     onePagePanel.id = 'panel-onepage'
     onePagePanel.innerHTML =
-      '<section id="onepage-items"></section>' +
       '<section id="onepage-cal" class="no-check"></section>' +
       '<section id="inbox-slot"></section>' +
       '<section id="onepage-mail"></section>'
@@ -3845,7 +3773,6 @@
     }
 
     noteRoutines(events)
-    document.getElementById('onepage-items').innerHTML = onePageItemsHtml()
 
     document.getElementById('onepage-cal').innerHTML =
       '<div class="section-head"><h2>📅 Calendar</h2>' +
@@ -3884,6 +3811,9 @@
    * on paper that is the order you work them in and there is no filter to
    * reach for.
    */
+  /** Hardest first — the order you work a printed list in. */
+  var OP_SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 }
+
   function printableHtml() {
     var rows = []
     try {
@@ -4657,6 +4587,26 @@
       sync(bridge)
     })
 
+    document.addEventListener('change', function (e) {
+      var box = e.target.closest('.mail-pick__box')
+      if (!box) return
+      var id = box.dataset.mid
+      if (!id) return
+      if (box.checked) mailPicked[id] = true
+      else delete mailPicked[id]
+      // The same message appears on the inbox tab and the dashboard page, so
+      // keep every copy of its box in step rather than only the one clicked.
+      Array.prototype.forEach.call(
+        document.querySelectorAll('.mail-pick__box[data-mid="' + id + '"]'),
+        function (other) {
+          other.checked = box.checked
+          var row = other.closest('.mail-line')
+          if (row) row.classList.toggle('is-picked', box.checked)
+        },
+      )
+      renderPickBar()
+    })
+
     rangeSel.addEventListener('change', function () {
       writeStored(RANGE_KEY, rangeSel.value)
       updateRangeUi()
@@ -4696,6 +4646,21 @@
       }
       var read = e.target.closest('.live-read')
       if (read) { markRead(bridge, read.dataset.mid, read); return }
+
+      var draftAll = e.target.closest('.mail-pickbar__draft')
+      if (draftAll) { draftPicked(bridge, draftAll); return }
+
+      var clearPicks = e.target.closest('.mail-pickbar__clear')
+      if (clearPicks) {
+        mailPicked = {}
+        Array.prototype.forEach.call(document.querySelectorAll('.mail-pick__box'), function (b) {
+          b.checked = false
+          var row = b.closest('.mail-line')
+          if (row) row.classList.remove('is-picked')
+        })
+        renderPickBar()
+        return
+      }
 
       var att = e.target.closest('.live-attach')
       if (att) prefillOwnForm(att.dataset.title || '', att.dataset.mid || '')

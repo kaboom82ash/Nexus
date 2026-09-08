@@ -48,6 +48,8 @@ export interface BridgeMailItem {
   unread: boolean
   score: number
   reasons: string[]
+  /** Gmail's preview of the message, for reading without opening it. */
+  snippet: string
   url: string
   category: string
 }
@@ -74,6 +76,8 @@ export interface BridgeThread {
 
 export interface BridgeEventItem {
   id: string
+  /** An instance of a repeating series, per Google — not guessed from a title. */
+  recurring: boolean
   title: string
   start: string
   end: string
@@ -299,6 +303,7 @@ const bridge: BriefingBridge = {
           unread: e.unread,
           score: e.score,
           reasons: e.reasons,
+          snippet: e.snippet,
           url: e.url,
           category: e.category,
         })),
@@ -316,6 +321,7 @@ const bridge: BriefingBridge = {
         ...(res.warning ? { warning: res.warning } : {}),
         items: res.events.map((e) => ({
           id: e.id,
+          recurring: e.recurring,
           title: e.title,
           start: e.start,
           end: e.end,

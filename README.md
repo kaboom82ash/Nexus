@@ -34,9 +34,18 @@ once — the open items, the calendar as four expandable sections, the inbox
 counts and what arrived since your last login, and the emails by category.
 
 Mail has no tab of its own. It is rendered into **Inbox & tasks by category**,
-grouped into a card per category: two tabs listing the same messages meant two
-sets of checkboxes writing to one punch-list entry, and the question each
-answered was the same question. The punch list offers a **printable version** —
+one message per line under a heading per category: two tabs listing the same
+messages meant two sets of checkboxes writing to one punch-list entry, and the
+question each answered was the same question. Each line leads with when it
+arrived, then the sender, the subject, and Gmail's own preview of the text —
+enough to decide without opening it. Severity is the line's left edge rather
+than a fill; a page of saturated blocks is unreadable at a glance, which is the
+point of a list.
+
+✍️ beside a message picks it, and **Draft replies** writes for everything
+picked, one after another. Replying happens in runs — you go through the
+morning's mail and answer five — so picking those five and asking once beats
+pressing ✍️ five times and waiting each time. The punch list offers a **printable version** —
 printing the app itself gives you a dark screenshot with a sticky masthead
 across the middle, so it composes a plain light document instead: open items,
 hardest first, with a box to tick.
