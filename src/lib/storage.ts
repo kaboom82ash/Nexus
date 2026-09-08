@@ -3,6 +3,7 @@ import {
   DashboardTab,
   TileExport,
   WidgetInstance,
+  HOME_TAB_ID,
   TILES_PER_PAGE,
 } from './types'
 import { makeId } from './id'
@@ -19,7 +20,16 @@ export function makeTab(name: string): DashboardTab {
 
 export function defaultState(): DashboardState {
   const first = makeTab('Dashboard 1')
-  return { tabs: [first], activeTabId: first.id }
+  return { tabs: [first], activeTabId: HOME_TAB_ID, homeSeen: true }
+}
+
+/**
+ * Resolve a stored active view: the homepage, one of `tabs`, or — when the
+ * stored id is gone — the homepage again.
+ */
+function resolveActive(tabs: DashboardTab[], activeTabId: string): string {
+  if (activeTabId === HOME_TAB_ID) return HOME_TAB_ID
+  return tabs.some((t) => t.id === activeTabId) ? activeTabId : HOME_TAB_ID
 }
 
 /** Normalize a loaded tab so its tile array is always exactly TILES_PER_PAGE long. */
@@ -36,10 +46,12 @@ export function loadState(): DashboardState {
     const parsed = JSON.parse(raw) as DashboardState
     if (!parsed?.tabs?.length) return defaultState()
     const tabs = parsed.tabs.map(normalizeTab)
-    const activeTabId = tabs.some((t) => t.id === parsed.activeTabId)
-      ? parsed.activeTabId
-      : tabs[0].id
-    return { tabs, activeTabId }
+    // Dashboards saved before the homepage existed open on it once, so the
+    // new home view is never hidden behind a tab the user has to discover.
+    const activeTabId = parsed.homeSeen
+      ? resolveActive(tabs, parsed.activeTabId)
+      : HOME_TAB_ID
+    return { tabs, activeTabId, homeSeen: true }
   } catch {
     return defaultState()
   }
@@ -80,10 +92,11 @@ export function importDashboard(json: string): DashboardState {
   const state = (parsed as DashboardExport).state ?? (parsed as DashboardState)
   if (!state?.tabs?.length) throw new Error('Not a valid Nexus dashboard file')
   const tabs = state.tabs.map(normalizeTab)
-  const activeTabId = tabs.some((t) => t.id === state.activeTabId)
-    ? state.activeTabId
-    : tabs[0].id
-  return { tabs, activeTabId }
+  return {
+    tabs,
+    activeTabId: resolveActive(tabs, state.activeTabId ?? HOME_TAB_ID),
+    homeSeen: true,
+  }
 }
 
 /** Portable JSON for a single tile (widget type + its settings). */

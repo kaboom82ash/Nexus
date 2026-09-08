@@ -1,9 +1,186 @@
 # Nexus Dashboard
 
-A tab-based dashboard of live-feed **widgets**. Each tab is a page holding a
-**5 × 5 grid of 25 tiles**; add more tabs whenever you need more room. Drop a
-widget into any empty tile, remove it with the ✕, and everything persists to
-your browser's `localStorage`.
+Nexus opens on the **Daily Digest** — a chief-of-staff console —
+with tab-based dashboards of live-feed **widgets** beside it.
+
+## Homepage: the Daily Digest
+
+The pinned first tab is the [Daily Digest](weekly-briefing/README.md): one
+self-contained page fusing a Gmail sweep and a Google Calendar sweep into a
+punch list, an inbox, a 14-day calendar, draft replies, and a reference vault.
+Checking any item queues it to the punch list, which persists in your browser
+across weekly rebuilds; ✓ closes an item as done and ✕ closes it as not needed,
+and both stay reopenable from the punch list.
+
+The app shell hoists two controls out of the iframe and stacks them under the
+header: a **category filter** (All, Critical, Personal, Kids, Health, Finances,
+Home, Lifestyle — multi-select, remembered) and the digest's own **tab row**.
+Both read the briefing's `window.__nexusDigest` API rather than duplicating its
+state, so a rebuilt page that renames or adds a tab needs no change in the
+shell. The filter reaches the punch list (including the page's own grouped rows
+below the board), the calendar, the mail and the dated home tab.
+
+A third-party stylesheet must not be able to stop any of that loading. The
+briefing pulls its fonts from `fonts.googleapis.com` in `<head>` and its script
+is `defer`red after it — and a render-blocking stylesheet blocks deferred
+scripts too, so on a network where that request hangs rather than fails the
+document sits in `readyState: "loading"` for ever: no data, no tabs, no error,
+and the deferred script that would have reported it never runs either.
+`WeeklyBriefing` watches for that and takes cross-origin stylesheets out of the
+critical path, restoring them if they do arrive.
+
+The first tab is **today's date**, and it is where you land: every view at
+once — the open items, the calendar as four expandable sections, the inbox
+counts and what arrived since your last login, and the emails by category.
+
+Mail has no tab of its own. It is rendered into **Inbox & tasks by category**,
+one message per line under a heading per category: two tabs listing the same
+messages meant two sets of checkboxes writing to one punch-list entry, and the
+question each answered was the same question. Each line leads with when it
+arrived, then the sender, the subject, and Gmail's own preview of the text —
+enough to decide without opening it. Severity is the line's left edge rather
+than a fill; a page of saturated blocks is unreadable at a glance, which is the
+point of a list.
+
+✍️ beside a message picks it, and **Draft replies** writes for everything
+picked, one after another. Replying happens in runs — you go through the
+morning's mail and answer five — so picking those five and asking once beats
+pressing ✍️ five times and waiting each time. The punch list offers a **printable version** —
+printing the app itself gives you a dark screenshot with a sticky masthead
+across the middle, so it composes a plain light document instead: open items,
+hardest first, with a box to tick.
+
+"Last login" is a *session*, not a page load. It used to be stamped forward on
+every boot, so reloading the page redefined your last visit as a moment ago and
+emptied the section that answers "what did I miss". The mark now only moves
+after a real absence.
+
+It is served verbatim from `public/weekly-briefing.html` and mounted in an
+iframe by `src/components/WeeklyBriefing.tsx`, so its own styles and script stay
+isolated from the app shell — and refreshing the week's content is a file swap,
+not a code change. The homepage cannot be renamed or removed.
+
+Two files in `public/briefing/` adapt the page to the app without touching its
+content, so a weekly rebuild does not disturb either:
+
+- **`theme.css`** restates the briefing's palette tokens as Nexus's, so it
+  wears the app's dark theme. The page tokenizes every color, so this is
+  variables only — no rule here targets its markup.
+- **`bridge.js`** gives it **live Gmail and Calendar data**, and most of the
+  behaviour above. A *Live data* strip under the masthead reports sync state and
+  pulls on demand; Google is connected from the app's header, which is the only
+  place that control exists. Live items are rendered in the page's own markup
+  vocabulary, so they get the same checkbox as swept items and **queue to the
+  punch list identically**.
+
+  **Routines** — the recurring blocks you keep for yourself — get their own
+  calendar section with a tick box and a note per occurrence. They are the one
+  thing on a calendar you can fail quietly: a meeting that did not happen
+  leaves a trace, because someone was waiting; the gym at seven simply passes.
+  The record has to outlive the data, since events are fetched from now
+  forward and this morning's occurrence is gone from the API by tomorrow — so
+  each one is written down the first time it is seen and the section renders
+  from that store. Routines are kept out of Key dates and Deadlines, which are
+  for holidays, birthdays, invitations and things with a clock on them.
+
+  An **all-day event counts as zero hours**, not twenty-four. It is a date
+  marker — a holiday, a birthday, a trip — and counting it as a full day made
+  every per-category total meaningless: one holiday outweighed a fortnight of
+  real meetings. They are shown in Key dates, where they belong.
+
+  It also derives what the calendar implies but does not contain. **Suggested
+  planning** proposes a travel block on each side of every event that carries a
+  real address, using a drive time measured in the sweep's logistics rows where
+  one exists and a flat estimate where none does; each block opens Google's own
+  event composer prefilled, so nothing is ever written to your calendar. The
+  **Inbox** section counts arrivals and unread over 24 hours and 7 days — those
+  totals come from Gmail's own count for the window, not from the ranked sample
+  the page holds, which would report the size of the sample — and breaks the
+  sample down by category beside them. 📖 on a message clears its UNREAD label
+  in the real mailbox; that is the one write in the whole app, so it asks for
+  `gmail.modify` on the click that needs it rather than at connect time.
+
+### When sign-in fails
+
+Google refuses in several very different ways — an origin missing from the
+OAuth client, an app awaiting verification, a blocked popup, a declined
+checkbox, an API switched off in Cloud — and they need opposite responses. The
+UI used to catch them all into one silent "Connect" state, which made every one
+of them look the same: a button that shows you Google and changes nothing.
+That is indistinguishable from a loop, and it hides the one fact that would end
+it. Google's own words are now kept per scope (`lastAuthError`), translated
+into what to do about them (`explainAuthError`), and shown beside the chips.
+
+**Actions ▸ 🩺 Sign-in diagnostics** dumps the origin, the client id, whether
+Google's script loaded, which scopes are held and for how long, how many
+consent screens have opened in the last minute, and the last error for each —
+enough to diagnose from outside the browser, with no tokens or message content
+in it.
+
+A circuit breaker caps interactive prompts at three per scope per minute, so
+nothing can reopen the consent screen without end.
+
+**Silent refreshes are the other half**, and were the loop that outlasted three
+fixes aimed at the interactive path. A silent refresh renews a token with no
+UI; it fails when the grant behind it is gone, and repeating it cannot change
+that. Nothing recorded those failures or slowed them down, so a grant that had
+lapsed was retried by the keep-alive every 45 seconds, on every window focus
+and on every visibility change, for as long as the tab stayed open — Google
+appearing over and over, while the diagnostics stayed empty because only the
+interactive path was logged. Now a refused scope is recorded
+(`silentRefreshFailures`), left alone for ten minutes, no longer counts as
+connected, and the keep-alive skips a token too far past expiry to renew
+(`RENEWABLE_MS`). Reproduced from a real report — four scopes expired between
+four and eight days — where sixteen focus events produced sixteen more Google
+calls; after the fix, none.
+
+Google reports the access it actually GRANTED, which is not always the scope
+string that was asked for: where a broader grant already covers the request,
+the response names the broader scope — `gmail.modify` answers a
+`gmail.readonly` request, a full `calendar` grant answers `calendar.readonly`.
+`SCOPE_COVERS` in `src/lib/gmail.ts` encodes that, because comparing the two as
+strings makes a successful sign-in read as a refusal and loops the consent
+screen with nothing on screen to explain it. A service chip is also never
+disabled and never shows a tick while its API is failing: a grant can lapse or
+be revoked while the cache still holds it, and a disabled tick beside a service
+returning nothing leaves no way to put it right.
+
+Live data uses the dashboard's existing Google client: one consent covers
+`gmail.readonly` and `calendar.readonly` together (`gmail.modify` is asked for
+separately, and only when you first mark something read), and the session is shared
+with every widget — connect in the briefing and the Gmail tiles are connected
+too. Without a Client ID configured everything runs on sample data, and opened
+as a standalone file the page says so and behaves exactly as it always did.
+
+The deployed build gets its Client ID from **`.env.production`**, committed to
+the repo. A browser OAuth client id is not a secret — Google publishes it in
+page source by design, and the control that matters is the client's *Authorized
+JavaScript origins* allowlist. Note that `.github/workflows/deploy.yml`
+deliberately does **not** pass `VITE_GOOGLE_CLIENT_ID` from a CI secret: an
+unset secret renders as an empty string, an existing env var outranks the
+`.env` file in Vite, and the deployed site would silently fall back to sample
+data.
+
+## Passcode gate
+
+The app sits behind a passcode (`src/components/PasscodeGate.tsx`). Set
+`VITE_APP_PASSCODE_HASH` to gate every visitor with one passcode; leave it unset
+and each browser sets its own on first use, which locks the app on that device.
+
+**This is a deterrent, not access control.** Nexus is a static site: every file
+it serves — `weekly-briefing.html` and its contents included — can be fetched
+directly by URL, and the gate is client-side code the visitor's own browser
+runs. It stops someone opening the app on your unlocked laptop, and a casual
+visitor who lands on the URL. It does not stop anyone willing to open devtools
+or request the HTML directly, and it cannot: there is no server here to withhold
+anything. Real protection means a private repository, or a host that
+authenticates before serving bytes.
+
+## Tile dashboards
+
+Every other tab is a page holding a **5 × 5 grid of 25 tiles**; add more tabs
+whenever you need more room. Drop a widget into any empty tile, remove it with
+the ✕, and everything persists to your browser's `localStorage`.
 
 ## First widget: Gmail Inbox
 
@@ -23,8 +200,10 @@ Shows **how many new emails** landed in your inbox over a time window (default
    **OAuth 2.0 Client ID** of type **Web application**.
 2. Under **Authorized JavaScript origins**, add the origin you serve this app
    from (e.g. `http://localhost:5173` for local dev).
-3. Enable the **Gmail API** for the project, and add the `gmail.readonly`
-   scope on the OAuth consent screen.
+3. Enable the **Gmail API** and the **Google Calendar API** for the project,
+   and add the `gmail.readonly` and `calendar.readonly` scopes on the OAuth
+   consent screen. (Calendar powers the homepage's live calendar; leave it off
+   and the rest still works.)
 4. Put the Client ID in `.env` as `VITE_GOOGLE_CLIENT_ID`, or paste it into the
    widget's ⚙ settings at runtime.
 
@@ -90,15 +269,32 @@ Widgets are self-contained and registered in one place, so adding a new one is
 a small, isolated change:
 
 ```
+public/
+  weekly-briefing.html  # the homepage, served as-is (swap it to refresh the week)
+  briefing/
+    theme.css           # restates the page's palette tokens as the app's
+    bridge.js           # live Gmail + Calendar inside the page
+weekly-briefing/        # the briefing's spec, sample data, and architecture notes
 src/
-  lib/          # types, storage, id, Gmail client
+  lib/          # types, storage, id, Gmail + Calendar clients, briefing bridge
   widgets/
     types.ts        # WidgetDefinition / props contract
     registry.ts     # <-- add new widgets here
     GmailInboxWidget.tsx
-  components/    # TabBar, DashboardGrid, Tile, WidgetPicker, Modal
-  App.tsx        # tab + tile state, persistence
+  components/    # TabBar, DashboardGrid, Tile, WidgetPicker, Modal, WeeklyBriefing
+  App.tsx        # active view (homepage or a tab) + tile state, persistence
 ```
+
+The active view is one field — `activeTabId` in the saved state — which is
+either a tab id or the reserved `HOME_TAB_ID`, so the homepage costs the tile
+code nothing.
+
+`lib/calendar.ts` is built on `lib/gmail.ts`'s OAuth layer rather than its own:
+`requestScopeToken` shares the client id, the GIS loader and the token cache,
+and `requestScopes` gets one token for several scopes and files it under each,
+so adding a Google API is a REST client, not a second sign-in.
+`lib/briefingBridge.ts` publishes those two clients on `window.__nexusBriefing`
+for the briefing page to call — see the comment there for the contract.
 
 ### Adding a widget
 

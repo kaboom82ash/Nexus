@@ -38,8 +38,23 @@ export interface DashboardTab {
 
 export interface DashboardState {
   tabs: DashboardTab[]
+  /** Either HOME_TAB_ID or the id of one of `tabs`. */
   activeTabId: string
+  /**
+   * Set once the Weekly Briefing homepage has been introduced to this browser.
+   * Absent in dashboards saved before the homepage existed, which is how we
+   * know to land those users on it the first time.
+   */
+  homeSeen?: boolean
 }
+
+/**
+ * The Daily Digest homepage. It is not a tile tab — it holds no widgets and
+ * cannot be renamed or removed — so it lives outside `tabs` and is identified
+ * by this reserved id wherever an active view is stored.
+ */
+export const HOME_TAB_ID = 'home'
+export const HOME_TAB_NAME = 'Daily Digest'
 
 /** 5 x 5 grid. */
 export const GRID_COLS = 5

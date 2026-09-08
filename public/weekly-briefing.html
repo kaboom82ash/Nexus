@@ -1,0 +1,2884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+DESIGN PLAN — Weekly Briefing (AK, chief-of-staff dashboard)
+
+Subject: a personal "chief of staff" weekly briefing that fuses the calendar
+sweep and the email triage into one scannable, operable page — not a report
+to read top-to-bottom, a console to work from. Audience of one (AK), often
+on a phone, deciding what to act on in the next ten minutes.
+
+Color (dossier / control-room, cool-neutral ground, not the cream+terracotta
+default):
+  --bg        #eef1f0 / dark #0e1513   cool paper / near-black teal ink
+  --surface   #ffffff / dark #16211d   card ground
+  --surface-2 #e3e8e6 / dark #1c2925   inset panels, table stripes
+  --ink       #16211f / dark #e7ece9   primary text
+  --muted     #5c6b67 / dark #93a39d   secondary text
+  --line      #d3dad7 / dark #263531   hairlines
+  --accent    #2f6f6a / dark #55a89f   teal — brand of the briefing itself
+  Semantic (separate hue family from accent, so status reads independent of brand):
+  --critical  #c23b3b   --high #d98a2b   --medium #4f6fd9   --low #4f9a5e
+
+Type: three roles.
+  Display — "Fraunces" (serif, opsz axis) for the masthead and section
+    titles: gives the "briefing document" a literary, considered voice.
+  Body — "Source Sans 3" for running text and table prose: quiet, legible,
+    does not compete with the serif.
+  Data/mono — "IBM Plex Mono" for every copyable value (case numbers,
+    account tails, amounts, dates) — monospace visually marks "this is a
+    token you'll copy," which is the whole point of the page.
+
+Layout: sticky masthead with a live stat strip (severity counts + a running
+countdown to the hardest deadline), then a tab console — Actions / Calendar /
+Email / Vault / Drafts — so AK opens straight to what he needs instead of
+scrolling a long report. Cards carry a left severity stripe (state as form,
+not just a colored word) with inline copy affordances wherever a value is
+meant to be lifted into another app.
+-->
+<title>AK Weekly Briefing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #eef1f0;
+    --surface: #ffffff;
+    --surface-2: #e3e8e6;
+    --ink: #16211f;
+    --muted: #5c6b67;
+    --line: #d3dad7;
+    --accent: #2f6f6a;
+    --accent-ink: #ffffff;
+    --critical: #c23b3b;
+    --critical-bg: #fbe8e6;
+    --high: #b06a1a;
+    --high-bg: #faead2;
+    --medium: #3c58b8;
+    --medium-bg: #e6eafb;
+    --low: #3f7f4d;
+    --low-bg: #e5f2e6;
+    --shadow: 0 1px 2px rgba(20, 30, 28, 0.06), 0 8px 24px -12px rgba(20, 30, 28, 0.18);
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1513;
+      --surface: #16211d;
+      --surface-2: #1c2925;
+      --ink: #e7ece9;
+      --muted: #93a39d;
+      --line: #263531;
+      --accent: #55a89f;
+      --accent-ink: #0b1614;
+      --critical: #e78585;
+      --critical-bg: #33191a;
+      --high: #e3ab5e;
+      --high-bg: #34260f;
+      --medium: #8fa3ef;
+      --medium-bg: #1b2340;
+      --low: #86c091;
+      --low-bg: #17281a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0e1513;
+    --surface: #16211d;
+    --surface-2: #1c2925;
+    --ink: #e7ece9;
+    --muted: #93a39d;
+    --line: #263531;
+    --accent: #55a89f;
+    --accent-ink: #0b1614;
+    --critical: #e78585;
+    --critical-bg: #33191a;
+    --high: #e3ab5e;
+    --high-bg: #34260f;
+    --medium: #8fa3ef;
+    --medium-bg: #1b2340;
+    --low: #86c091;
+    --low-bg: #17281a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  h1, h2, h3 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .mono {
+    font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  a { color: var(--accent); }
+
+  button { font-family: inherit; }
+
+  /* ---------- Masthead ---------- */
+
+  .masthead {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    padding: 18px clamp(16px, 4vw, 40px) 0;
+  }
+
+  .masthead-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+
+  .masthead h1 { font-size: clamp(28px, 4vw, 40px); font-style: italic; }
+
+  .masthead-meta {
+    color: var(--muted);
+    font-size: 13.5px;
+    text-align: right;
+  }
+
+  .stat-strip {
+    max-width: 1180px;
+    margin: 18px auto 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px 10px 0 0;
+    overflow: hidden;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 12px 16px;
+  }
+
+  .stat .n {
+    font-family: "Fraunces", serif;
+    font-weight: 700;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .stat .l {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .stat.deadline .n { color: var(--critical); }
+
+  /* ---------- Tabs ---------- */
+
+  .tabs {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: flex;
+    gap: 4px;
+    padding: 10px 0;
+    overflow-x: auto;
+  }
+
+  .tab-btn {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .tab-btn:hover { background: var(--surface-2); color: var(--ink); }
+
+  .tab-btn[aria-selected="true"] {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .tab-btn .count {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    opacity: 0.85;
+  }
+
+  .tab-btn:focus-visible, button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ---------- Main ---------- */
+
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px clamp(16px, 4vw, 40px) 80px;
+  }
+
+  .panel { display: none; }
+  .panel.active { display: block; animation: rise 0.25s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .panel.active { animation: none; }
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  section + section { margin-top: 36px; }
+
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .section-head h2 { font-size: 22px; }
+  .section-head .sub { color: var(--muted); font-size: 13.5px; }
+
+  /* ---------- Cards ---------- */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+  }
+
+  .card + .card { margin-top: 12px; }
+
+  .card.sev-critical { border-left-color: var(--critical); }
+  .card.sev-high { border-left-color: var(--high); }
+  .card.sev-medium { border-left-color: var(--medium); }
+  .card.sev-low { border-left-color: var(--low); }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .card-title { font-size: 15.5px; font-weight: 700; margin: 0 0 4px; }
+
+  .pill {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .pill.sev-critical { color: var(--critical); background: var(--critical-bg); }
+  .pill.sev-high { color: var(--high); background: var(--high-bg); }
+  .pill.sev-medium { color: var(--medium); background: var(--medium-bg); }
+  .pill.sev-low { color: var(--low); background: var(--low-bg); }
+
+  .card-body { color: var(--ink); font-size: 14.5px; margin-top: 6px; }
+  .card-body p { margin: 6px 0; }
+  .card-meta {
+    margin-top: 10px;
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .card-meta b { color: var(--ink); font-weight: 600; }
+
+  .action-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+
+  .action-desc { font-size: 13.5px; color: var(--ink); }
+
+  /* ---------- Copy chips ---------- */
+
+  .copy-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 3px 4px 3px 10px;
+    font-size: 13px;
+  }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    flex-shrink: 0;
+  }
+
+  .copy-btn:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .copy-btn:active { transform: scale(0.96); }
+  .copy-btn.copied { background: var(--low); border-color: var(--low); color: #fff; }
+
+  .copy-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+  .cal-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .cal-btn:hover { background: var(--accent); color: var(--accent-ink); }
+
+  .mail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .mail-link:hover { text-decoration: underline; }
+
+  .msg-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .msg-meta .ts { font-family: "IBM Plex Mono", monospace; }
+
+  details.thread-history {
+    margin-top: 10px;
+    border-top: 1px dashed var(--line);
+    padding-top: 8px;
+  }
+  details.thread-history summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent);
+    list-style: none;
+  }
+  details.thread-history summary::-webkit-details-marker { display: none; }
+  details.thread-history summary::before { content: "▸ "; }
+  details.thread-history[open] summary::before { content: "▾ "; }
+  details.thread-history .hist-list {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--muted);
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  details.thread-history .hist-list li {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  details.thread-history .hist-list li:last-child { border-bottom: none; }
+  details.thread-history .hist-list b { color: var(--ink); font-weight: 600; }
+
+  td.link-cell { white-space: nowrap; }
+
+  /* ---------- Tables ---------- */
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; background: var(--surface); }
+
+  thead th {
+    text-align: left;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-2);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-2); }
+
+  td.num { font-family: "IBM Plex Mono", monospace; white-space: nowrap; }
+
+  /* ---------- Vault ---------- */
+
+  .vault-grid { display: grid; gap: 10px; }
+
+  .vault-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(160px, 1.4fr) auto;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 11px 14px;
+  }
+
+  .vault-label { font-size: 13px; color: var(--muted); }
+  .vault-label .ctx { display: block; font-size: 11.5px; margin-top: 2px; opacity: 0.85; }
+  .vault-value { font-size: 14.5px; font-weight: 600; word-break: break-word; }
+
+  /* ---------- Drafts ---------- */
+
+  .draft-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .draft-card + .draft-card { margin-top: 16px; }
+  .draft-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .draft-to { font-size: 13.5px; color: var(--muted); }
+  .draft-to b { color: var(--ink); }
+  .draft-body { padding: 16px; font-size: 14px; white-space: pre-wrap; font-family: "IBM Plex Mono", monospace; line-height: 1.65; }
+
+  .note {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  .callout {
+    background: var(--critical-bg);
+    border: 1px solid color-mix(in srgb, var(--critical) 35%, transparent);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .callout b { color: var(--critical); }
+
+  .links-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .file-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .file-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  footer {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 4vw, 40px) 40px;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  /* ---------- Checklist + quick actions ---------- */
+
+  .chk-wrap {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 4px;
+    flex-shrink: 0;
+    padding-top: 2px;
+    cursor: pointer;
+  }
+
+  .done-checkbox {
+    width: 17px;
+    height: 17px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  td.chk-cell { width: 1%; padding-right: 4px; vertical-align: middle; }
+
+  .qa-group { display: inline-flex; gap: 4px; align-items: center; }
+  .card > .qa-group { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+
+  .qa-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--ink);
+    transition: background 0.15s ease, border-color 0.15s ease;
+    flex-shrink: 0;
+  }
+  .qa-btn:hover { background: var(--accent); border-color: var(--accent); }
+  .qa-btn.copied { background: var(--low); border-color: var(--low); }
+
+  .card.is-done, main tr.is-done, .cat-row.is-done { opacity: 0.5; transition: opacity 0.2s ease; }
+  .card.is-done:hover, main tr.is-done:hover, .cat-row.is-done:hover { opacity: 0.85; }
+  main tr.is-done td:not(.chk-cell):not(:last-child) { text-decoration: line-through; }
+  .cat-row.is-done .cat-title { text-decoration: line-through; }
+
+  .progress-note {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .stat .n .of { font-size: 15px; color: var(--muted); font-weight: 500; }
+
+  /* ---------- Category dashboard ---------- */
+
+  .cat-block { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .cat-block + .cat-block { margin-top: 20px; }
+  .cat-block-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .cat-block-head .icon { font-size: 20px; }
+  .cat-block-head h3 { font-size: 17px; }
+  .cat-block-head .cat-count { margin-left: auto; font-size: 12px; color: var(--muted); font-family: "IBM Plex Mono", monospace; }
+
+  .cat-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+  .cat-row:last-child { border-bottom: none; }
+  .cat-row .cat-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+  .cat-row .cat-main { flex: 1; min-width: 0; }
+  .cat-row .cat-title { font-weight: 600; }
+  .cat-row .cat-title .sev-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 6px; }
+  .cat-row .cat-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .cat-row .cat-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .cat-row.sev-critical .cat-title { color: var(--critical); }
+  .cat-row.sev-high .cat-title { color: var(--high); }
+
+  /* ---------- Category accent colors (identity, not severity) ---------- */
+
+  :root {
+    --cat-personal: #7d6bb0;
+    --cat-kids: #d17a9c;
+    --cat-home: #2f6f6a;
+    --cat-finance: #b8863b;
+    --cat-health: #6b9e78;
+    --cat-lifestyle: #5c8fb0;
+  }
+  .cat-block { border-top: 3px solid var(--line); }
+  .cat-accent-personal { border-top-color: var(--cat-personal); }
+  .cat-accent-kids { border-top-color: var(--cat-kids); }
+  .cat-accent-home { border-top-color: var(--cat-home); }
+  .cat-accent-finance { border-top-color: var(--cat-finance); }
+  .cat-accent-health { border-top-color: var(--cat-health); }
+  .cat-accent-lifestyle { border-top-color: var(--cat-lifestyle); }
+  .cat-block-head .icon { font-size: 26px; }
+
+  /* ---------- Category summary strip (graphical jump nav) ---------- */
+
+  .cat-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
+  .cat-strip-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 14px 20px;
+    cursor: pointer;
+    min-width: 84px;
+    box-shadow: var(--shadow);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+    font-family: inherit;
+  }
+  .cat-strip-tile:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .cat-strip-tile .icon { font-size: 26px; }
+  .cat-strip-tile .lbl { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+
+  /* ---------- Queued state (added to punch list, not "done") ---------- */
+
+  .card.is-queued, main tr.is-queued, .cat-row.is-queued {
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  }
+  .card.is-queued { border-left-color: var(--accent); }
+
+  /* ---------- Punch List ---------- */
+
+  .punch-toolbar { margin-bottom: 18px; }
+  .punch-stat { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted); }
+
+  .punch-group { margin-bottom: 20px; }
+  .punch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+  }
+  .punch-row:last-child { border-bottom: none; }
+  .punch-row input.punch-done { margin-top: 2px; width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .punch-row .punch-main { flex: 1; min-width: 0; }
+  .punch-row .punch-title { font-weight: 600; }
+  .punch-row .punch-title .sev-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 6px; }
+  .punch-row .punch-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  .punch-row .punch-remove { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; flex-shrink: 0; padding: 2px 4px; }
+  .punch-row .punch-remove:hover { color: var(--critical); }
+  .punch-row.is-done { opacity: 0.5; transition: opacity 0.2s ease; }
+  .punch-row.is-done:hover { opacity: 0.85; }
+  .punch-row.is-done .punch-title { text-decoration: line-through; }
+  .punch-row.is-done .punch-subs, .punch-row.is-done .added-date, .punch-row.is-done .done-date { text-decoration: none; }
+
+  .punch-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .added-date {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-left: 6px;
+    white-space: nowrap;
+    display: inline-block;
+  }
+  .sub-count {
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .punch-subs { margin-top: 6px; padding-left: 4px; border-left: 2px solid var(--line); }
+  .sub-row { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px 8px; font-size: 12.5px; }
+  .sub-row input.sub-done { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .sub-text-done { text-decoration: line-through; color: var(--muted); }
+  .sub-del { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 4px; }
+  .sub-del:hover { color: var(--critical); }
+  .sub-add-row { display: flex; gap: 6px; padding: 4px 0 2px 8px; }
+  .sub-input {
+    flex: 1;
+    max-width: 320px;
+    font-family: inherit;
+    font-size: 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 4px 8px;
+  }
+  .sub-input:focus { outline: 2px solid var(--accent); }
+  .sub-add {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--accent);
+    border-radius: 6px;
+    width: 26px;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .sub-add:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .refresh-btn {
+    margin-top: 6px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .refresh-btn:hover { background: var(--accent); color: var(--accent-ink); }
+  .refresh-btn.copied { background: var(--low); border-color: var(--low); color: #fff; }
+
+  .new-badge {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    margin-left: 6px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  .title-edit-input {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+    padding: 3px 8px;
+    min-width: 240px;
+  }
+
+  /* ---------- Status, priority flag, completion date ---------- */
+
+  .status-sel {
+    font-family: inherit;
+    font-size: 11px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    padding: 3px 4px;
+    max-width: 132px;
+    cursor: pointer;
+  }
+  .status-sel:focus { outline: 2px solid var(--accent); }
+
+  .flag-btn { opacity: 0.45; }
+  .flag-btn.flag-on { opacity: 1; background: var(--critical-bg); border-color: var(--critical); }
+
+  .status-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--medium-bg);
+    color: var(--medium);
+    white-space: nowrap;
+  }
+  .done-date {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--low);
+    margin-left: 6px;
+    white-space: nowrap;
+    display: inline-block;
+  }
+  .cat-grid-label .mail-link { font-size: 11px; margin-top: 2px; }
+
+  /* ---------- Dashboard tiles ---------- */
+
+  .dash-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .dash-tile {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+  .dash-tile:hover { transform: translateY(-2px); }
+  .dash-tile .dt-icon { font-size: 22px; }
+  .dash-tile .dt-name { font-size: 12.5px; font-weight: 700; color: var(--ink); margin-top: 4px; }
+  .dash-tile .dt-counts { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .dash-tile.dt-critical { border-top-color: var(--critical); }
+  .dash-tile.dt-critical .dt-name { color: var(--critical); }
+
+  /* ---------- Deadline chip ---------- */
+
+  .deadline-chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .deadline-chip.overdue { background: var(--critical-bg); border-color: var(--critical); color: var(--critical); }
+
+  /* ---------- Category grid (inbox by life area) ---------- */
+
+  .cat-grid-band {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .cat-grid-band + .cat-grid-band { margin-top: 12px; }
+  .cat-grid-label {
+    background: var(--surface-2);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-right: 1px solid var(--line);
+  }
+  .cat-grid-label .icon { font-size: 24px; }
+  .cat-grid-label .name { font-weight: 700; font-size: 14px; }
+  .cat-grid-label .cnt { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--muted); }
+  .cat-grid-items { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; align-content: flex-start; }
+  .cat-grid-items .cat-row {
+    flex: 1 1 240px;
+    max-width: 340px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: var(--bg);
+    font-size: 12.5px;
+  }
+  .cat-grid-items .cat-row .cat-title { font-size: 12.5px; }
+  .cat-grid-items .cat-row .cat-meta { font-size: 11px; }
+  @media (max-width: 640px) {
+    .cat-grid-band { grid-template-columns: 1fr; }
+    .cat-grid-label { flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--line); padding: 10px 14px; }
+  }
+  .band-home { border-left-color: var(--cat-home); }
+  .band-finance { border-left-color: var(--cat-finance); }
+  .band-health { border-left-color: var(--cat-health); }
+  .band-kids { border-left-color: var(--cat-kids); }
+  .band-lifestyle { border-left-color: var(--cat-lifestyle); }
+  .band-personal { border-left-color: var(--cat-personal); }
+
+  /* ---------- Weekly calendar grid ---------- */
+
+  .week-grid-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table.week-grid { border-collapse: collapse; width: 100%; min-width: 900px; background: var(--surface); font-size: 12px; }
+  table.week-grid thead th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-2);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  table.week-grid thead th:first-child { border-left: none; }
+  table.week-grid thead th.today { color: var(--accent); }
+  table.week-grid td {
+    vertical-align: top;
+    padding: 6px;
+    border-bottom: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+    min-width: 108px;
+  }
+  table.week-grid td:first-child { border-left: none; }
+  table.week-grid tr:last-child td { border-bottom: none; }
+  table.week-grid td.wg-label {
+    background: var(--surface-2);
+    font-weight: 700;
+    font-size: 12px;
+    white-space: nowrap;
+    padding: 10px;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    border-right: 1px solid var(--line);
+  }
+  .wg-ev {
+    display: block;
+    border-left: 3px solid var(--line);
+    background: var(--bg);
+    border-radius: 5px;
+    padding: 4px 6px;
+    margin-bottom: 4px;
+    text-decoration: none;
+    color: var(--ink);
+    line-height: 1.35;
+  }
+  a.wg-ev:hover { border-left-color: var(--accent); background: var(--surface-2); }
+  .wg-ev .t { font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--muted); display: block; }
+  .wg-ev.crit { border-left-color: var(--critical); }
+  .wg-ev.wg-kids { border-left-color: var(--cat-kids); }
+  .wg-ev.wg-personal { border-left-color: var(--cat-personal); }
+  .wg-ev.wg-home { border-left-color: var(--cat-home); }
+  .wg-ev.wg-finance { border-left-color: var(--cat-finance); }
+  .wg-ev.wg-health { border-left-color: var(--cat-health); }
+
+  /* ---------- Logistics ---------- */
+
+  .logi-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+    background: var(--surface);
+  }
+  .logi-row:last-child { border-bottom: none; }
+  .logi-day { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--muted); min-width: 88px; flex-shrink: 0; padding-top: 2px; }
+  .logi-main { flex: 1; }
+  .logi-title { font-weight: 600; }
+  .logi-addr { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .logi-wrap { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+</style>
+
+<!-- Nexus integration. Both files live in public/briefing/ and are additive:
+     theme.css re-declares this page's palette tokens as the app's, and
+     bridge.js adds live Gmail + Calendar data when the page runs inside Nexus.
+     Opened standalone the bridge disables itself and the briefing is unchanged.
+     RE-ADD THESE TWO LINES after a weekly rebuild overwrites this file —
+     src/components/WeeklyBriefing.tsx also injects them if they are missing,
+     so forgetting costs a flash of the original theme, not the integration. -->
+<link rel="stylesheet" href="briefing/theme.css">
+<script src="briefing/bridge.js" defer></script>
+
+<div class="masthead">
+  <div class="masthead-top">
+    <div>
+      <p class="eyebrow">Weekly briefing · AK</p>
+      <h1>Aug 24 – Sep 6, 2026</h1>
+    </div>
+    <div class="masthead-meta">
+      <span id="data-asof">Data as of Mon, Aug 24, 2026 · 9:30 PM ET</span><br>
+      <span id="new-today-note"></span>
+      <button type="button" class="refresh-btn" id="refresh-btn" title="Copy the daily-refresh prompt — paste it into your Claude chat and the page is rebuilt with fresh inbox + calendar data (your punch list is preserved)">🔄 Refresh data</button>
+    </div>
+  </div>
+  <div class="stat-strip">
+    <div class="stat"><div class="n mono" style="color:var(--critical)" id="stat-critical">0</div><div class="l">Critical on punch list</div></div>
+    <div class="stat"><div class="n mono" style="color:var(--high)" id="stat-high">0</div><div class="l">High on punch list</div></div>
+    <div class="stat"><div class="n mono">154</div><div class="l">Calendar events, 14 days</div></div>
+    <div class="stat"><div class="n mono">4h 30m</div><div class="l">Proposed Mon PM prep</div></div>
+    <div class="stat deadline"><div class="n mono" id="countdown">–</div><div class="l">Until Sept 1 foreclosure sale</div></div>
+    <div class="stat"><div class="n mono" id="progress-count">0<span class="of">on list</span></div><div class="l">📋 Punch list</div></div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Briefing sections">
+    <button class="tab-btn" role="tab" data-panel="punchlist" aria-selected="true">📋 Punch List <span class="count mono" id="punch-tab-count">0</span></button>
+    <button class="tab-btn" role="tab" data-panel="actions" aria-selected="false">Actions &amp; Inbox <span class="count mono" id="inbox-tab-count">–</span></button>
+    <button class="tab-btn" role="tab" data-panel="calendar" aria-selected="false">Calendar <span class="count mono">14d</span></button>
+    <button class="tab-btn" role="tab" data-panel="drafts" aria-selected="false">✍️ Drafts <span class="count mono">5</span></button>
+    <button class="tab-btn" role="tab" data-panel="vault" aria-selected="false">Reference vault <span class="count mono">16</span></button>
+  </nav>
+</div>
+
+<main>
+
+  <!-- ===================== ACTIONS ===================== -->
+  <div class="panel" id="panel-actions">
+
+    <div class="callout" style="margin-bottom:24px;">
+      <b>Hardest deadline this week:</b> the second-mortgage foreclosure sale on 855 Peachtree St #2205 is scheduled for the first Tuesday in September — <b>Sept 1</b>. Your attorney says this week is the last window to decide on the loan buy-back.
+    </div>
+
+    <section>
+      <div class="section-head">
+        <h2>This week at a glance</h2>
+        <span class="sub">Emails + tasks per category · tap a tile to jump to its section</span>
+      </div>
+      <div class="dash-tiles" id="dash-tiles"></div>
+    </section>
+
+    <section id="top-actions">
+      <div class="section-head">
+        <h2>Top actions — ranked by deadline</h2>
+        <span class="sub">Critical items due this week or next · check to add to punch list</span>
+      </div>
+      <div class="cat-block" style="border-left:4px solid var(--critical);">
+        <div class="cat-block-head"><span class="icon">🔴</span><h3>Critical &amp; time-sensitive</h3><span class="cat-count">10 items</span></div>
+        <div class="cat-row sev-critical" data-cat="finance" data-sync="paypal">
+          <span class="cat-icon">💰</span>
+          <div class="cat-main">
+            <div class="cat-title">Pay PayPal Credit minimum — already reported late<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip overdue">OVERDUE — was Aug 21</span> · $71.00 min ($30 past-due) · acct …9890</div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a025a6e7bfdf8c2" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="finance" data-sync="amazon">
+          <span class="cat-icon">💰</span>
+          <div class="cat-main">
+            <div class="cat-title">Fix Amazon payment method — orders stuck<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip overdue">NOW — 16+ declines since Aug 17</span></div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02b6622ec9fa26" target="_blank" rel="noopener">✉️ Most recent ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="home" data-sync="hoa-tax">
+          <span class="cat-icon">🏠</span>
+          <div class="cat-main">
+            <div class="cat-title">Confirm OGP-HOA Dekalb tax bills were actually paid<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip overdue">ASAP — tax-sale risk raised</span> · only the address change was approved in-thread · draft reply ready below</div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01f17f9fdbd6f9" target="_blank" rel="noopener">✉️ Thread ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-high" data-cat="finance" data-sync="affirm-dicks">
+          <span class="cat-icon">💰</span>
+          <div class="cat-main">
+            <div class="cat-title">Affirm autopay — Dick's Sporting Goods, $76.07<span class="pill sev-high sev-tag">High</span></div>
+            <div class="cat-meta"><span class="deadline-chip">Tue, Aug 25</span> · Visa …2738 — confirm funds; the Parking Spot autopay ($26.88) already failed</div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02af52cf35576e" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="personal" data-sync="zep">
+          <span class="cat-icon">💼</span>
+          <div class="cat-main">
+            <div class="cat-title">Zep interview — Paul Wood, Senior Product Manager<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip">Tue, Aug 25 · 9:00 AM</span> · Zoom in invite · your "Prep Paul Wood" block is tonight 5:30 PM</div>
+            <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=OHFoNTVoMTk5dmdjZ2dyaG82cGQwYTE3c2MgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Event ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0293980156b5c6" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="kids">
+          <span class="cat-icon">🧒</span>
+          <div class="cat-main">
+            <div class="cat-title">Tuesday gauntlet — Dental 11 AM → APS Fingerprinting 2 PM → Curriculum Night 5 PM<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip">Tue, Aug 25</span> · directions for every stop are in Calendar → Logistics</div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a033bc232e4d4b4" target="_blank" rel="noopener">✉️ Dental ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0201da6a85c669" target="_blank" rel="noopener">✉️ APS ↗</a> <a class="mail-link" href="https://www.google.com/calendar/event?eid=X2NrcjY2ZDFwNjloamdiOWpjOG8zMGI5bDZjcjM2YjlvY2NzNjhiYjVjNHIzZWU5bzZ0Z2o4ZGI1NzAgc2ZsNGsxb282YjZtcXVramFnbmI2NGphMzRqaG5tZjRAaQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Curriculum Night ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="home" data-sync="p855">
+          <span class="cat-icon">🏠</span>
+          <div class="cat-main">
+            <div class="cat-title">Decide on the 855 Peachtree loan buy-back<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip overdue">This week — sale is Sep 1</span> · Joanna (paralegal) is waiting on your written questions · draft ready below · Case 24CV013887</div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/19f861335cd92fee" target="_blank" rel="noopener">✉️ Thread ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="finance" data-sync="chase">
+          <span class="cat-icon">💰</span>
+          <div class="cat-main">
+            <div class="cat-title">Chase mortgage — $24,213.75<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip">Tue, Sep 1</span> · acct …7429 — confirm the amount is expected and fund it</div>
+            <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01ca96946fd60f" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="finance" data-sync="child-support">
+          <span class="cat-icon">💰</span>
+          <div class="cat-main">
+            <div class="cat-title">Pay child support<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip">Tue, Sep 1</span></div>
+            <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=XzZvcmo0ZGE1NmdyajJiYTQ2Y28zMmI5azY0czM4YjlwNjhyM2ViOWo4NHAzZWNxNTZzcjM2ZGhoNzBfMjAyNjA5MDEgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+          </div>
+        </div>
+        <div class="cat-row sev-critical" data-cat="personal" data-sync="adddrop">
+          <span class="cat-icon">🎓</span>
+          <div class="cat-main">
+            <div class="cat-title">Confirm Fall schedule — EMBA Add/Drop/Swap closes<span class="pill sev-critical sev-tag">Critical</span></div>
+            <div class="cat-meta"><span class="deadline-chip">Wed, Sep 2 · 11:59 PM</span></div>
+            <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxobTJyMzVkcGk2MnNoZGNscjZhcmprNWtxM2VkcGc2Y3NnIG51YjYwc3NpNHFyb3A1ajhraTU4c2Fsa25rNnM2b3FyQGk&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Inbox &amp; tasks by category</h2>
+        <span class="sub">Everything from the email sweep + calendar, one row per life area</span>
+      </div>
+
+      <div class="cat-grid-band band-home" id="band-home">
+        <div class="cat-grid-label"><span class="icon">🏙️</span><span class="name">855 Peachtree St</span><span class="cnt" data-cnt="home"></span>
+          <a class="mail-link" href="https://mail.google.com/mail/u/0/#label/855+Peachtree+Street" target="_blank" rel="noopener">✉️ Gmail label ↗</a>
+        </div>
+        <div class="cat-grid-items">
+          <div class="cat-row sev-critical" data-cat="home" data-sync="p855">
+            <div class="cat-main">
+              <div class="cat-title">855 Peachtree litigation<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Buy-back decision due · Sep 1 sale · 30-msg thread</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/19f861335cd92fee" target="_blank" rel="noopener">✉️ Thread ↗</a></div>
+            </div>
+          </div>
+
+          <div class="cat-row sev-low" data-cat="home">
+            <div class="cat-main">
+              <div class="cat-title">Zillow reports — #2205 &amp; Unit 3103<span class="pill sev-low sev-tag">Low</span></div>
+              <div class="cat-meta">Confirm why 3103 is tracked</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02a2ba53ac67bb" target="_blank" rel="noopener">✉️ #2205 ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01ab662c602d48" target="_blank" rel="noopener">✉️ 3103 ↗</a></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="cat-grid-band band-home" id="band-home-shaudi">
+        <div class="cat-grid-label"><span class="icon">🏡</span><span class="name">2027 Shaudi Ln</span><span class="cnt"></span>
+          <a class="mail-link" href="https://mail.google.com/mail/u/0/#label/2027+Shaudi+Lane" target="_blank" rel="noopener">✉️ Gmail label ↗</a>
+        </div>
+        <div class="cat-grid-items">
+          <div class="cat-row sev-critical" data-cat="home" data-sync="hoa-tax">
+            <div class="cat-main">
+              <div class="cat-title">OGP-HOA property tax bills<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Payment unconfirmed · draft reply below</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01f17f9fdbd6f9" target="_blank" rel="noopener">✉️ Thread ↗</a></div>
+            </div>
+          </div>
+
+          <div class="cat-row" data-cat="home">
+            <div class="cat-main">
+              <div class="cat-title">Weekly Household Topics</div>
+              <div class="cat-meta">Sundays 1:00 PM — next Aug 30</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=NGZ0b2FzaXZhMDdub3VnbW8wMjRzNm1qNWRfMjAyNjA4MzBUMTcwMDAwWiBmYW1pbHkxNjI4OTE2NzA1ODM5MzI4NzQwMUBn&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+            </div>
+          </div>
+
+          <div class="cat-row" data-cat="home">
+            <div class="cat-main">
+              <div class="cat-title">Change HVAC air filters</div>
+              <div class="cat-meta">Tue Sep 1</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=XzZjc2syY3BvNmdxMzRiYTI2Z280NmI5azZvcGsyYmEyODkxazJiOWk4Z3IzZWQ5aDhvcGplZDI1OGNfMjAyNjA5MDEga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+            </div>
+          </div>
+
+          <div class="cat-row sev-low" data-cat="home">
+            <div class="cat-main">
+              <div class="cat-title">Pool filter outage — resolved<span class="pill sev-low sev-tag">Low</span></div>
+              <div class="cat-meta">Vendor fixed same day, pool stayed open</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02486010945775" target="_blank" rel="noopener">✉️ Thread ↗</a></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="cat-grid-band band-finance" id="band-finance">
+        <div class="cat-grid-label"><span class="icon">💰</span><span class="name">Finance</span><span class="cnt" data-cnt="finance"></span></div>
+        <div class="cat-grid-items">
+          <div class="cat-row sev-critical" data-cat="finance" data-sync="chase">
+            <div class="cat-main">
+              <div class="cat-title">Chase mortgage — $24,213.75<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Due Sep 1 · acct …7429</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01ca96946fd60f" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-critical" data-cat="finance" data-sync="paypal">
+            <div class="cat-main">
+              <div class="cat-title">PayPal Credit — past due<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">$71.00 min · was due 8/21 · acct …9890</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a025a6e7bfdf8c2" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-critical" data-cat="finance" data-sync="amazon">
+            <div class="cat-main">
+              <div class="cat-title">Amazon — card declined 16+ times<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Update payment method now</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02b6622ec9fa26" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-high" data-cat="finance" data-sync="affirm-dicks">
+            <div class="cat-main">
+              <div class="cat-title">Affirm — Dick's, $76.07<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">Autopay Tue Aug 25 · Visa …2738</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02af52cf35576e" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-high" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">Affirm — Parking Spot, failed<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">$26.88 · retry with new card</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0209bfbbd9846d" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-critical" data-cat="finance" data-sync="child-support">
+            <div class="cat-main">
+              <div class="cat-title">Pay child support<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Tue Sep 1</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=XzZvcmo0ZGE1NmdyajJiYTQ2Y28zMmI5azY0czM4YjlwNjhyM2ViOWo4NHAzZWNxNTZzcjM2ZGhoNzBfMjAyNjA5MDEgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-high" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">Edfinancial — deferment update<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">Log in and review this week</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02034dfc85dee8" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">Upgrade FlexPay — Six Flags loan<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">New installment loan opened · track schedule</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a026e342eb8dbfa" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">Amex …14006 — removed from Apple Pay<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">Re-add if wanted; check for decline trigger</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01cbe1e13a25c3" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">LegalZoom — subscription card update<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">Update to avoid compliance-service lapse</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a025118ef3c777b" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">Chase + identity monitoring alerts<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">"Did you close this account?" — skim, confirm no fraud</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0205c21207719b" target="_blank" rel="noopener">✉️ Chase ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02620880f1d806" target="_blank" rel="noopener">✉️ Identity ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-low" data-cat="finance">
+            <div class="cat-main">
+              <div class="cat-title">Credit Karma + Truist statements<span class="pill sev-low sev-tag">Low</span></div>
+              <div class="cat-meta">Routine monitoring noise · archive after a glance</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02b9f0f7cd542f" target="_blank" rel="noopener">✉️ CK ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a021c663a2edb38" target="_blank" rel="noopener">✉️ Truist ↗</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-grid-band band-health" id="band-health">
+        <div class="cat-grid-label"><span class="icon">🏥</span><span class="name">Health</span><span class="cnt" data-cnt="health"></span></div>
+        <div class="cat-grid-items">
+          <div class="cat-row sev-high" data-cat="health">
+            <div class="cat-main">
+              <div class="cat-title">Briarcliff Dental — appointment<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">Tue Aug 25, 11:00 AM</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a033bc232e4d4b4" target="_blank" rel="noopener">✉️ Email ↗</a> <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Briarcliff+Dental+Group%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-high" data-cat="health">
+            <div class="cat-main">
+              <div class="cat-title">Atlanta Spine &amp; Wellness — balance<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">Kim following up on 7/23 exam · draft reply below</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02498104a09b8a" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="health">
+            <div class="cat-main">
+              <div class="cat-title">Workout Anytime — card on file<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">Recurring declines just outside this window (last 8/12)</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#search/workout+anytime" target="_blank" rel="noopener">✉️ Search inbox ↗</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-grid-band band-kids" id="band-kids">
+        <div class="cat-grid-label"><span class="icon">🧒</span><span class="name">Kids</span><span class="cnt" data-cnt="kids"></span></div>
+        <div class="cat-grid-items">
+          <div class="cat-row sev-critical" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">Curriculum Night — Ava (Bolton)<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Tue Aug 25, 5:00–7:00 PM</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=X2NrcjY2ZDFwNjloamdiOWpjOG8zMGI5bDZjcjM2YjlvY2NzNjhiYjVjNHIzZWU5bzZ0Z2o4ZGI1NzAgc2ZsNGsxb282YjZtcXVramFnbmI2NGphMzRqaG5tZjRAaQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01f5a92a9ef3bb" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-high" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">APS Fingerprinting &amp; Badging<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">Tue Aug 25, 2:00 PM</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0201da6a85c669" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-high" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">Grade Potential — tutor Cindy + refund<span class="pill sev-high sev-tag">High</span></div>
+              <div class="cat-meta">Callback needed · draft reply below</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a026b94c38f8ab3" target="_blank" rel="noopener">✉️ Email ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/19fc330119de7580" target="_blank" rel="noopener">✉️ Refund ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-critical" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">Back to School Night — Trinity (Maya)<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Thu Sep 3, 5:30 PM · not on any connected calendar — add it</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#search/trinity" target="_blank" rel="noopener">✉️ Search inbox ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">Ava — weekly activities</div>
+              <div class="cat-meta">Swim · Spanish · Ballet · Tennis · Bollywood — full grid on Calendar tab</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=Xzc1MWs4aDlnNjBxajBiOW82c3AzZ2I5azg1MjM0YmEyOGtzNDJiOWk2Z280MmMxaDg5MmowY2hoNjBfMjAyNjA4MzBUMTk0MDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener">📅 Next swim ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">Maya — ACT Foundations</div>
+              <div class="cat-meta">Wed 5:30 PM · The Studios Brookhaven</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=XzY0cjNlY2ExNmdvMzZiOWg2Z3M0NGI5azhjcDNnYjlvNmwzM2FiOXA2bDJqOGRpMzZrcDNlYzlvOGtfMjAyNjA4MjZUMjEzMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-low" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">School reports &amp; recaps<span class="pill sev-low sev-tag">Low</span></div>
+              <div class="cat-meta">Securly ×2 · ClassDojo snapshot (Ashton 12, Maya 28) · Spanish tutor recap</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02a0d1eadd2408" target="_blank" rel="noopener">✉️ Securly ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a024043a0054a6a" target="_blank" rel="noopener">✉️ Dojo ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01c43ad7f2e88f" target="_blank" rel="noopener">✉️ Tutor ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="kids">
+            <div class="cat-main">
+              <div class="cat-title">ClassDojo — "Jenkins" / "Perch Parliament" posts<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">Confirm which child's class these belong to</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0207023afb65d0" target="_blank" rel="noopener">✉️ Jenkins ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0209a7d4fa9bc0" target="_blank" rel="noopener">✉️ NEST ↗</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-grid-band band-lifestyle" id="band-lifestyle">
+        <div class="cat-grid-label"><span class="icon">🎡</span><span class="name">Lifestyle</span><span class="cnt" data-cnt="lifestyle"></span></div>
+        <div class="cat-grid-items">
+          <div class="cat-row" data-cat="lifestyle">
+            <div class="cat-main">
+              <div class="cat-title">Six Flags 2027 Gold Pass — $65</div>
+              <div class="cat-meta">Lowest price · sale ends 9/7</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a024f6f876f9ce7" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="lifestyle">
+            <div class="cat-main">
+              <div class="cat-title">Georgia Aquarium — $20 Tuesdays</div>
+              <div class="cat-meta">Ending soon</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02f5b9a719dfea" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="lifestyle">
+            <div class="cat-main">
+              <div class="cat-title">Costco — 1-yr membership + $40 card</div>
+              <div class="cat-meta">Groupon</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a02e94b8308611a" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="lifestyle">
+            <div class="cat-main">
+              <div class="cat-title">LEGO deals — $12–$54 sets</div>
+              <div class="cat-meta">7 Slickdeals alerts this week</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a031f847219309c" target="_blank" rel="noopener">✉️ Latest ↗</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cat-grid-band band-personal" id="band-personal">
+        <div class="cat-grid-label"><span class="icon">📧</span><span class="name">Personal &amp; Career</span><span class="cnt" data-cnt="personal"></span></div>
+        <div class="cat-grid-items">
+          <div class="cat-row sev-critical" data-cat="personal" data-sync="zep">
+            <div class="cat-main">
+              <div class="cat-title">Zep interview — Paul Wood<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Tue Aug 25, 9:00 AM · Zoom</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=OHFoNTVoMTk5dmdjZ2dyaG82cGQwYTE3c2MgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0293980156b5c6" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">Recruiter — Scott Kriscovich (TGR)</div>
+              <div class="cat-meta">Awaiting his reply re: Stout</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/19ffaf4c6b258b98" target="_blank" rel="noopener">✉️ Thread ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-medium" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">Avyonce Carter — GT Connect, unanswered<span class="pill sev-medium sev-tag">Medium</span></div>
+              <div class="cat-meta">3 nudges (Aug 20–24) · draft reply below</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a01f558e2289281" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">Applications sent — 4 this week</div>
+              <div class="cat-meta">Planview · Wayne-Sanderson · Murdoch Mason · Finatal</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0265bb45e5f0a0" target="_blank" rel="noopener">✉️ Planview ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a024f439bb7b835" target="_blank" rel="noopener">✉️ W-S ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a021c148eec6df9" target="_blank" rel="noopener">✉️ MM ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0169f79514fcde" target="_blank" rel="noopener">✉️ Finatal ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-critical" data-cat="personal" data-sync="adddrop">
+            <div class="cat-main">
+              <div class="cat-title">EMBA Add/Drop closes<span class="pill sev-critical sev-tag">Critical</span></div>
+              <div class="cat-meta">Wed Sep 2, 11:59 PM</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxobTJyMzVkcGk2MnNoZGNscjZhcmprNWtxM2VkcGc2Y3NnIG51YjYwc3NpNHFyb3A1ajhraTU4c2Fsa25rNnM2b3FyQGk&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">EMBA semester calendar synced</div>
+              <div class="cat-meta">16 sessions · midterm Oct 18 · final project Dec 13</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a021611b0c1b7a1" target="_blank" rel="noopener">✉️ Email ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">Networking — Marketing AI Pulse + Thought Logic</div>
+              <div class="cat-meta">Both Thu Aug 27 · 1:30 PM &amp; 5:00 PM</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=MDhldjhocjlvMmVsMW9zbmU1aXR2MnZhZG0ga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 AI Pulse ↗</a> <a class="mail-link" href="https://www.google.com/calendar/event?eid=YWE3cGVjYWY0Y3NtNTF0dXRuOGp1OXJqbW8ga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Thought Logic ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">NW Mutual — welcome mtg + event</div>
+              <div class="cat-meta">Thu Aug 27 10 AM · Tue Sep 1 9 AM</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc3MG80OGNocDhvcmtjYzFuNjkzNDhoMWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnNzEyamNjYTM2NHEzMmhpMjY0cjNhYzlrODkwajRkaHA4Z3BqZWdpMTZwMTQ2YzlrNzUxMCBhc2hpc2hrb2hsaUBt&ctz=America/New_York" target="_blank" rel="noopener">📅 Welcome ↗</a> <a class="mail-link" href="https://www.google.com/calendar/event?eid=NzFlMGMyZDNzMHQzbjExZDh0YWRxNmxrcWYgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener">📅 Event ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">MAP Meeting with Chad (Nova)</div>
+              <div class="cat-meta">Tue Aug 25, 3:30 PM · Zoom</div>
+              <div class="cat-links"><a class="mail-link" href="https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2a3EzaWQ5bTY1MGs4Y2k0NjkzNDhoMWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnNjhwNDRjMjE2MHJqZ2g5azY0cDMwYzFrOGQwajhoOWs4Z3EzMmg5azZncGowZTIzOGwxZyBhc2hpc2hrb2hsaUBt&ctz=America/New_York" target="_blank" rel="noopener">📅 Calendar ↗</a></div>
+            </div>
+          </div>
+          <div class="cat-row sev-low" data-cat="personal">
+            <div class="cat-main">
+              <div class="cat-title">Newsletters worth reading<span class="pill sev-low sev-tag">Low</span></div>
+              <div class="cat-meta">1. The Information · 2. Morning Brew · 3. MIT Tech Review</div>
+              <div class="cat-links"><a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a030a88ca181175" target="_blank" rel="noopener">✉️ Info ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a0331f94a08ea7c" target="_blank" rel="noopener">✉️ Brew ↗</a> <a class="mail-link" href="https://mail.google.com/mail/u/0/#all/1a033aa4d3f5c722" target="_blank" rel="noopener">✉️ MIT ↗</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <section>
+      <div class="section-head"><h2>Full deliverables</h2><span class="sub">Saved to Drive · Weekly Planning / 2026-08-24 Week of Aug 24</span></div>
+      <div class="links-row">
+        <a class="file-link" href="https://drive.google.com/drive/folders/1pfh18iwMOfdlUd5CP8o-HKBuj5kk8KIK" target="_blank" rel="noopener">📁 Week folder</a>
+        <a class="file-link" href="https://drive.google.com/file/d/14hx4yYWqibK1Wzyre19sv46FvbohmtTA/view?usp=drivesdk" target="_blank" rel="noopener">📄 Calendar_Summary.docx</a>
+        <a class="file-link" href="https://drive.google.com/file/d/1dlIw9ZzmMws70cGsamwUMv4Iv8thXwJI/view?usp=drivesdk" target="_blank" rel="noopener">📅 Prep_Meetings.ics</a>
+        <a class="file-link" href="https://drive.google.com/file/d/1Y95omIvPhu442QTQjhmxXk-XNw2uz_Fl/view?usp=drivesdk" target="_blank" rel="noopener">✉️ Email_Summary.md</a>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== CALENDAR ===================== -->
+  <div class="panel" id="panel-calendar">
+
+    <section class="no-check">
+      <div class="section-head">
+        <h2>Suggested meetings — awaiting your approval</h2>
+        <span class="sub">Nothing is on your calendar yet · Monday, Aug 24, 12:00–6:00 PM</span>
+      </div>
+      <div class="callout" style="margin-bottom:14px;">
+        <b>Nothing gets added automatically.</b> Each row below is a suggested prep block only. Click <b>Add to calendar</b> on the ones you want — that opens a pre-filled Google Calendar invite you confirm yourself. Or reply in chat with "approve all" / "approve 1, 3, 7" and they'll be added for you.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Select</th><th>Priority</th><th></th><th>#</th><th>Time</th><th>Prep block</th><th>For</th><th>Event date</th><th>Hrs</th><th>Approve</th></tr></thead>
+          <tbody id="prep-tbody"></tbody>
+        </table>
+      </div>
+      <p class="note"><b id="prep-selected-note">Selected for prep: 0h 0m of 4h 30m</b> — checking a row adds it to the punch list too. Total proposed: 4h 30m across 7 blocks. Two overlaps flagged against existing Monday commitments — check the docx before adding. Full invite-format file: Prep_Meetings_2026-08-24.ics (linked in Actions → Full deliverables and in the Reference vault).</p>
+    </section>
+
+    <section class="no-check">
+      <div class="section-head">
+        <h2>Week 1 — Aug 24 – 30</h2>
+        <span class="sub">One row per category · click any event to open it on Google Calendar</span>
+      </div>
+      <div class="week-grid-wrap">
+        <table class="week-grid">
+          <thead><tr><th></th><th class="today">Mon 24</th><th>Tue 25</th><th>Wed 26</th><th>Thu 27</th><th>Fri 28</th><th>Sat 29</th><th>Sun 30</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="wg-label">🧒 Kids</td>
+              <td>
+                <a class="wg-ev wg-kids crit" href="https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc4a28zOGNoZzhncmpjYzI1NjkxNDhoMWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnNjkxajBjcTM4NHA0Y2Q5bDY1MGplaGhrNzRzMzJlYTY2bDBqaWU5aTcwczNhZGhwNmNzMCBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">8:20 AM</span>Ava PTC</a>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzZzcmphZHE2NjhwM2FiOW44aDE0OGI5azY0czNjYmExOHAwamFiOWc2dDJqaWgxZzhrcDNjaDI0NjRfMjAyNjA4MjRUMjAwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">4:00 PM</span>Ava Spanish</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids crit" href="https://mail.google.com/mail/u/0/#all/1a0201da6a85c669" target="_blank" rel="noopener"><span class="t">2:00 PM</span>APS Fingerprinting</a>
+                <a class="wg-ev wg-kids crit" href="https://www.google.com/calendar/event?eid=X2NrcjY2ZDFwNjloamdiOWpjOG8zMGI5bDZjcjM2YjlvY2NzNjhiYjVjNHIzZWU5bzZ0Z2o4ZGI1NzAgc2ZsNGsxb282YjZtcXVramFnbmI2NGphMzRqaG5tZjRAaQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:00 PM</span>Curriculum Night</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzZzcmphZHE2NjhwM2FiOW44aDE0OGI5azY0czNjYmExOHAwamFiOWc2dDJqaWgxZzhrcDNjaDI0NjRfMjAyNjA4MjZUMjAwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">4:00 PM</span>Ava Spanish</a>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzY0cjNlY2ExNmdvMzZiOWg2Z3M0NGI5azhjcDNnYjlvNmwzM2FiOXA2bDJqOGRpMzZrcDNlYzlvOGtfMjAyNjA4MjZUMjEzMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:30 PM</span>Maya ACT</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzZ0MjMwY2hqNjByMzZiOWk2b3FrNmI5azY4cmthYmExODRyNGFiOW03NTBqMGRwaDhkMTNjaDFqNm9fMjAyNjA4MjdUMjAwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">4:00 PM</span>Ava Ballet</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzhrcGthZ3E1OGtwamNiYTU2c3IzNGI5azZrcjNjYjlvODhwNGFiOWs3MHFqZ2hpMTYxMTMyZ2hsOGNfMjAyNjA4MjhUMjEzMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:30 PM</span>Ava Tennis</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzY0b2o0Y2hoOGgxMzhiOXA4cDJrMmI5azZwMzRjYjlvNjUya2NiYTQ4Z29qOGRpNjZwMTRjYzlqOG9fMjAyNjA4MjlUMTQwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">10:00 AM</span>Ava Bollywood</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=Xzc1MWs4aDlnNjBxajBiOW82c3AzZ2I5azg1MjM0YmEyOGtzNDJiOWk2Z280MmMxaDg5MmowY2hoNjBfMjAyNjA4MzBUMTk0MDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">3:40 PM</span>Ava Swim</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="wg-label">🎓 EMBA / Dev</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=MDhldjhocjlvMmVsMW9zbmU1aXR2MnZhZG0ga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">1:30 PM</span>Marketing AI Pulse</a>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=YWE3cGVjYWY0Y3NtNTF0dXRuOGp1OXJqbW8ga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:00 PM</span>Thought Logic</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxnbjZzcjljdG42cXBiZWVnbWoyY2huNjRxMzBjOCBudWI2MHNzaTRxcm9wNWo4a2k1OHNhbGtuazZzNm9xckBp&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:00 PM</span>OAM 634 — Strategy</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxnbjZzcjljdG42cXBiZWVnbWoyY2hsNmtxajBkOCBudWI2MHNzaTRxcm9wNWo4a2k1OHNhbGtuazZzNm9xckBp&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">9:00 AM</span>ACT 512 — S1</a>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxnbjZzcjljdG42cXBiZWVnbWoyY2huNmdwamFkMCBudWI2MHNzaTRxcm9wNWo4a2k1OHNhbGtuazZzNm9xckBp&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">1:30 PM</span>OAM 531 — Will to Lead</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="wg-label">💼 Job / Business</td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=dmdoZzY2dWRvbDNiZjc1ZGE0MTNpYmlvMWcgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:30 PM</span>Prep Paul Wood</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-personal crit" href="https://www.google.com/calendar/event?eid=OHFoNTVoMTk5dmdjZ2dyaG82cGQwYTE3c2MgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">9:00 AM</span>Zep Interview — Paul Wood</a>
+                <a class="wg-ev wg-personal crit" href="https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2a3EzaWQ5bTY1MGs4Y2k0NjkzNDhoMWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnNjhwNDRjMjE2MHJqZ2g5azY0cDMwYzFrOGQwajhoOWs4Z3EzMmg5azZncGowZTIzOGwxZyBhc2hpc2hrb2hsaUBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">3:30 PM</span>MAP Mtg — Chad</a>
+              </td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-personal crit" href="https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc3MG80OGNocDhvcmtjYzFuNjkzNDhoMWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnNzEyamNjYTM2NHEzMmhpMjY0cjNhYzlrODkwajRkaHA4Z3BqZWdpMTZwMTQ2YzlrNzUxMCBhc2hpc2hrb2hsaUBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">10:00 AM</span>NW Mutual Welcome</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="wg-label">🏠 Home</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-home" href="https://www.google.com/calendar/event?eid=NGZ0b2FzaXZhMDdub3VnbW8wMjRzNm1qNWRfMjAyNjA4MzBUMTcwMDAwWiBmYW1pbHkxNjI4OTE2NzA1ODM5MzI4NzQwMUBn&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">1:00 PM</span>Household Topics</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="wg-label">💰 Finance</td>
+              <td>
+                <a class="wg-ev wg-finance crit" href="https://mail.google.com/mail/u/0/#all/1a025a6e7bfdf8c2" target="_blank" rel="noopener"><span class="t">OVERDUE</span>PayPal Credit $71</a>
+                <a class="wg-ev wg-finance crit" href="https://mail.google.com/mail/u/0/#all/1a02b6622ec9fa26" target="_blank" rel="noopener"><span class="t">NOW</span>Fix Amazon card</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-finance crit" href="https://mail.google.com/mail/u/0/#all/1a02af52cf35576e" target="_blank" rel="noopener"><span class="t">AUTOPAY</span>Affirm $76.07</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="wg-label">🏥 Health</td>
+              <td>
+                <a class="wg-ev wg-health" href="https://mail.google.com/mail/u/0/#all/1a02498104a09b8a" target="_blank" rel="noopener"><span class="t">ANY DAY</span>Call Atlanta Spine</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-health crit" href="https://mail.google.com/mail/u/0/#all/1a033bc232e4d4b4" target="_blank" rel="noopener"><span class="t">11:00 AM</span>Briarcliff Dental</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="no-check">
+      <div class="section-head">
+        <h2>Week 2 — Aug 31 – Sep 6</h2>
+      </div>
+      <div class="week-grid-wrap">
+        <table class="week-grid">
+          <thead><tr><th></th><th>Mon 31</th><th>Tue 1</th><th>Wed 2</th><th>Thu 3</th><th>Fri 4</th><th>Sat 5</th><th>Sun 6</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="wg-label">🧒 Kids</td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzZzcmphZHE2NjhwM2FiOW44aDE0OGI5azY0czNjYmExOHAwamFiOWc2dDJqaWgxZzhrcDNjaDI0NjRfMjAyNjA4MzFUMjAwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">4:00 PM</span>Ava Spanish</a>
+              </td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzZzcmphZHE2NjhwM2FiOW44aDE0OGI5azY0czNjYmExOHAwamFiOWc2dDJqaWgxZzhrcDNjaDI0NjRfMjAyNjA5MDJUMjAwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">4:00 PM</span>Ava Spanish</a>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzY0cjNlY2ExNmdvMzZiOWg2Z3M0NGI5azhjcDNnYjlvNmwzM2FiOXA2bDJqOGRpMzZrcDNlYzlvOGtfMjAyNjA5MDJUMjEzMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:30 PM</span>Maya ACT</a>
+              </td>
+              <td>
+                <span class="wg-ev wg-kids crit"><span class="t">5:30 PM</span>Trinity Back-to-School (Maya) — add to calendar</span>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzZ0MjMwY2hqNjByMzZiOWk2b3FrNmI5azY4cmthYmExODRyNGFiOW03NTBqMGRwaDhkMTNjaDFqNm9fMjAyNjA5MDNUMjAwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">4:00 PM</span>Ava Ballet</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=Nm02MG5icGxuOW8zY201ZWEzZjZqYnMyZG1fMjAyNjA5MDQga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">ALL WKND</span>KIDS weekend starts</a>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzhrcGthZ3E1OGtwamNiYTU2c3IzNGI5azZrcjNjYjlvODhwNGFiOWs3MHFqZ2hpMTYxMTMyZ2hsOGNfMjAyNjA5MDRUMjEzMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">5:30 PM</span>Ava Tennis</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=XzY0b2o0Y2hoOGgxMzhiOXA4cDJrMmI5azZwMzRjYjlvNjUya2NiYTQ4Z29qOGRpNjZwMTRjYzlqOG9fMjAyNjA5MDVUMTQwMDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">10:00 AM</span>Ava Bollywood</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-kids" href="https://www.google.com/calendar/event?eid=Xzc1MWs4aDlnNjBxajBiOW82c3AzZ2I5azg1MjM0YmEyOGtzNDJiOWk2Z280MmMxaDg5MmowY2hoNjBfMjAyNjA5MDZUMTk0MDAwWiBrb2hsaWhvbWUyMkBt&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">3:40 PM</span>Ava Swim</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="wg-label">🎓 EMBA / Dev</td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxnbjZzcjljdG42cXBiZWVnbWoyY2huNmdwamFkOCBudWI2MHNzaTRxcm9wNWo4a2k1OHNhbGtuazZzNm9xckBp&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">8:00 PM</span>OAM 531 — S2A</a>
+              </td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxnbjZzcjljdG42cXBiZWVnbWoyY2hsNmtxajBkZyBudWI2MHNzaTRxcm9wNWo4a2k1OHNhbGtuazZzNm9xckBp&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">8:00 PM</span>ACT 512 — S2a</a>
+                <a class="wg-ev wg-personal crit" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxobTJyMzVkcGk2MnNoZGNscjZhcmprNWtxM2VkcGc2Y3NnIG51YjYwc3NpNHFyb3A1ajhraTU4c2Fsa25rNnM2b3FyQGk&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">11:59 PM</span>Add/Drop closes</a>
+              </td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=X2NscjZhcmprNWxnbjZzcjljdG42cXBiZWVnbWoyY2huNjRxMzBkOCBudWI2MHNzaTRxcm9wNWo4a2k1OHNhbGtuazZzNm9xckBp&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">8:00 PM</span>OAM 634 — Industry Analysis</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="wg-label">💼 Job / Business</td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-personal" href="https://www.google.com/calendar/event?eid=NzFlMGMyZDNzMHQzbjExZDh0YWRxNmxrcWYgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">9:00 AM</span>NW Mutual Event</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="wg-label">🏠 Home</td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-home" href="https://www.google.com/calendar/event?eid=XzZjc2syY3BvNmdxMzRiYTI2Z280NmI5azZvcGsyYmEyODkxazJiOWk4Z3IzZWQ5aDhvcGplZDI1OGNfMjAyNjA5MDEga29obGlob21lMjJAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">ALL DAY</span>HVAC filters</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-home" href="https://www.google.com/calendar/event?eid=NGZ0b2FzaXZhMDdub3VnbW8wMjRzNm1qNWRfMjAyNjA5MDZUMTcwMDAwWiBmYW1pbHkxNjI4OTE2NzA1ODM5MzI4NzQwMUBn&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">1:00 PM</span>Household Topics</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="wg-label">💰 Finance</td>
+              <td></td>
+              <td>
+                <a class="wg-ev wg-finance crit" href="https://www.google.com/calendar/event?eid=XzZvcmo0ZGE1NmdyajJiYTQ2Y28zMmI5azY0czM4YjlwNjhyM2ViOWo4NHAzZWNxNTZzcjM2ZGhoNzBfMjAyNjA5MDEgYXNoaXNoa29obGlAbQ&ctz=America/New_York" target="_blank" rel="noopener"><span class="t">ALL DAY</span>Pay Child Support</a>
+                <a class="wg-ev wg-finance crit" href="https://mail.google.com/mail/u/0/#all/1a01ca96946fd60f" target="_blank" rel="noopener"><span class="t">DUE</span>Chase mortgage $24,213.75</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td class="wg-label">🏥 Health</td>
+              <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Events marked with a red edge are Critical. "Trinity Back-to-School" came from email only — it isn't on any connected calendar yet, so there's nothing to link until you add it.</p>
+    </section>
+
+    <section class="no-check">
+      <div class="section-head">
+        <h2>Logistics — where you need to be</h2>
+        <span class="sub">From home (2027 Shaudi Ln, 30345) · times are typical-traffic estimates — the directions link shows live time</span>
+      </div>
+      <div class="logi-wrap">
+        <div class="logi-row">
+          <span class="logi-day">Tue, Aug 25</span>
+          <div class="logi-main"><div class="logi-title">🏥 Briarcliff Dental Group — 11:00 AM</div><div class="logi-addr">Briarcliff Rd area, Atlanta · <b>~15 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Briarcliff+Dental+Group%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Tue, Aug 25</span>
+          <div class="logi-main"><div class="logi-title">🧒 APS Fingerprinting &amp; Badging — 2:00 PM</div><div class="logi-addr">Atlanta Public Schools Safety &amp; Security · <b>~25–30 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Atlanta+Public+Schools+Center+for+Learning+and+Leadership%2C+130+Trinity+Ave+SW%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Tue, Aug 25</span>
+          <div class="logi-main"><div class="logi-title">🧒 Curriculum Night — Bolton Academy — 5:00 PM</div><div class="logi-addr">2268 Adams Dr NW, Atlanta · <b>~25–30 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Bolton+Academy+Elementary+School%2C+2268+Adams+Dr+NW%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Thu, Aug 27</span>
+          <div class="logi-main"><div class="logi-title">💼 NW Mutual Welcome — 10:00 AM</div><div class="logi-addr">Overlook III, Atlanta · <b>~30–35 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Overlook+III%2C+2859+Paces+Ferry+Rd+SE%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Thu, Aug 27</span>
+          <div class="logi-main"><div class="logi-title">🎓 Marketing AI Pulse — 1:30 PM</div><div class="logi-addr">Atlanta Tech Park, 107 Technology Pkwy NW, Peachtree Corners · <b>~20–25 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Atlanta+Tech+Park%2C+107+Technology+Parkway+NW%2C+Peachtree+Corners%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Thu, Aug 27</span>
+          <div class="logi-main"><div class="logi-title">🎓 Thought Logic Networking — 5:00 PM</div><div class="logi-addr">Goizueta Foundation Building, Room W320, Emory · <b>~15 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Goizueta+Business+School%2C+Emory+University%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Recurring</span>
+          <div class="logi-main"><div class="logi-title">🧒 Ava Spanish — Mon/Wed 4:00 PM</div><div class="logi-addr">The Spanish Academy, 2461 Peachtree Rd NE, Atlanta · <b>~20 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=The+Spanish+Academy%2C+2461+Peachtree+Rd+NE%2C+Atlanta%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Recurring</span>
+          <div class="logi-main"><div class="logi-title">🧒 Ava Ballet — Thu 4:00 PM</div><div class="logi-addr">Dauphin Dance Center, 3896 Lavista Rd, Tucker · <b>~8 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Dauphin+Dance+Center%2C+3896+Lavista+Rd%2C+Tucker%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Recurring</span>
+          <div class="logi-main"><div class="logi-title">🧒 Maya ACT Foundations — Wed 5:30 PM</div><div class="logi-addr">The Studios Brookhaven, 1816 Briarwood Industrial Ct NE · <b>~12 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=The+Studios+Brookhaven%2C+1816+Briarwood+Industrial+Ct+NE%2C+Brookhaven%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Recurring</span>
+          <div class="logi-main"><div class="logi-title">🧒 Ava Bollywood Dance — Sat 10:00 AM</div><div class="logi-addr">Kruti Dance Academy, 3520 Breckinridge Blvd, Duluth · <b>~20–25 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Kruti+Dance+Academy%2C+3520+Breckinridge+Blvd%2C+Duluth%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+        <div class="logi-row">
+          <span class="logi-day">Recurring</span>
+          <div class="logi-main"><div class="logi-title">🧒 Ava Swim — Sun 3:40 PM</div><div class="logi-addr">Dynamo Swim School, 225 E Dougherty St, Decatur · <b>~15 min from home</b></div></div>
+          <a class="mail-link" href="https://www.google.com/maps/dir/?api=1&origin=2027+Shaudi+Ln%2C+Atlanta%2C+GA+30345&destination=Dynamo+Swim+School%2C+225+E+Dougherty+St%2C+Decatur%2C+GA" target="_blank" rel="noopener">🧭 Directions ↗</a>
+        </div>
+      </div>
+    </section>
+
+
+    <section>
+      <div class="section-head"><h2>Calendar coverage</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Calendar</th><th>Events, 14d</th></tr></thead>
+          <tbody>
+            <tr><td>AK Personal</td><td class="mono">43</td></tr>
+            <tr><td>ROUTINE</td><td class="mono">63</td></tr>
+            <tr><td>Kohli Home</td><td class="mono">24</td></tr>
+            <tr><td>Holidays India</td><td class="mono">5</td></tr>
+            <tr><td>EMORY Canvas (EMBA)</td><td class="mono">7</td></tr>
+            <tr><td>Hypepotamus Feed</td><td class="mono">7</td></tr>
+            <tr><td>Katie/Ashish Family</td><td class="mono">3</td></tr>
+            <tr><td>ClassDojo</td><td class="mono">1</td></tr>
+            <tr><td>Bolton Academy</td><td class="mono">1</td></tr>
+            <tr><td>Personal Development, KIDS, Grill Dome, GRILL BUDDI, NOVA, Holidays US</td><td class="mono">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== PUNCH LIST ===================== -->
+  <div class="panel active" id="panel-punchlist">
+    <div class="section-head">
+      <h2>📋 Punch List</h2>
+      <span class="sub" id="punch-subhead">Persists week to week — items carry forward across rebuilds until completed or removed · edit text, track sub-steps, or copy a research prompt per item</span>
+    </div>
+    <div class="punch-toolbar">
+      <span class="punch-stat"><span id="punch-total-count">0</span> on the list · <span id="punch-done-count">0</span> completed</span>
+    </div>
+    <div id="punchlist-root">
+      <p class="note" style="padding:24px 0;">Nothing on your punch list yet. Check any box on the Actions &amp; Inbox or Calendar tabs to add it here. Critical and High counts in the top bar track this list.</p>
+    </div>
+  </div>
+
+  <!-- ===================== DRAFTS ===================== -->
+  <div class="panel" id="panel-drafts">
+    <section>
+      <div class="section-head">
+        <h2>Draft replies — critical emails awaiting a response</h2>
+        <span class="sub">Starting points, not final — review before sending. Not legal advice.</span>
+      </div>
+
+      <div class="draft-card">
+        <div class="draft-head">
+          <div class="draft-to">To <b>Joanna, Clifton Law Firm</b> · Re: 855 Peachtree #2205 (Case 24CV013887)</div>
+          <button class="copy-btn" data-copy-target="draft-1">Copy draft</button>
+        </div>
+        <div class="draft-body" id="draft-1">Subject: Questions before we proceed — 855 Peachtree #2205
+
+Hi Joanna,
+
+Ahead of deciding on the loan buy-back this week, here's what I need answered:
+
+1. What is the exact payoff amount and the hard deadline to fund it?
+2. If we proceed, what entity should hold title — personal name or an LLC?
+3. What happens if we do nothing before September 1 — what are we actually at risk of losing at that point?
+4. Are there financing options for the buy-back, or does it need to be cash?
+5. What's the total cost, all-in, including your firm's fees?
+
+Once I have these I can make the call. Happy to jump on a quick call today or tomorrow if that's faster than email.
+
+Thanks,
+Ashish</div>
+        <p class="note" style="padding:0 16px 16px;">These are suggested questions to move the decision forward — not legal advice. Confirm details with your attorney directly.</p>
+      </div>
+
+      <div class="draft-card">
+        <div class="draft-head">
+          <div class="draft-to">To <b>Chris Johnson / Kirit Kanakiya, OGP-HOA board</b> · Re: Dekalb County property tax bills</div>
+          <button class="copy-btn" data-copy-target="draft-4">Copy draft</button>
+        </div>
+        <div class="draft-body" id="draft-4">Subject: RE: OGP-HOA's Dekalb County Property Tax Bills — confirming payment
+
+Hi Chris and Kirit,
+
+Good to see the mailing-address change approved so bills stop going astray. One thing I want to close the loop on: can someone confirm the two current Dekalb County tax bills have actually been PAID (not just the address updated)? Given the tax-sale risk that was raised, I'd like a payment confirmation or check number on the record for both bills.
+
+If they haven't gone out yet, let's get them paid this week and note it in the thread.
+
+Thanks,
+Ashish</div>
+      </div>
+
+      <div class="draft-card">
+        <div class="draft-head">
+          <div class="draft-to">To <b>Grade Potential Tutoring</b> · Re: Ashton's tutor + refund</div>
+          <button class="copy-btn" data-copy-target="draft-2">Copy draft</button>
+        </div>
+        <div class="draft-body" id="draft-2">Subject: Following up — Ashton's tutor Cindy, and the open refund
+
+Hi there,
+
+Following up on two open items:
+
+1. Ashton's tutor — I'd like to confirm the account changes we discussed for Cindy going forward.
+2. The refund for the earlier tutor who never showed up for the session — this is still outstanding and I'd like it resolved this week.
+
+Could someone call me back at your earliest convenience to close both out?
+
+Thanks,
+Ashish</div>
+      </div>
+
+      <div class="draft-card">
+        <div class="draft-head">
+          <div class="draft-to">To <b>Kim, Atlanta Spine and Wellness</b> · Re: outstanding balance</div>
+          <button class="copy-btn" data-copy-target="draft-3">Copy draft</button>
+        </div>
+        <div class="draft-body" id="draft-3">Subject: Following up on my account balance
+
+Hi Kim,
+
+Sorry for the delay getting back to you — following up on the balance from my 7/23 initial exam and X-rays. Could you send me the exact amount owed and the easiest way to pay it? I'd like to get this closed out this week.
+
+Thanks,
+Ashish</div>
+      </div>
+
+      <div class="draft-card">
+        <div class="draft-head">
+          <div class="draft-to">To <b>Avyonce Carter</b> · via Georgia Tech Connect</div>
+          <button class="copy-btn" data-copy-target="draft-5">Copy draft</button>
+        </div>
+        <div class="draft-body" id="draft-5">Hi Avyonce,
+
+Thanks for reaching out, and apologies for the slow reply — busy week. Happy to talk about my sales and consulting experience: I spent several years leading sales and marketing for a consumer products company (retail through Costco, Home Depot, and Amazon, plus B2B distribution), and I currently do strategy consulting work alongside my Executive MBA at Emory.
+
+What would be most useful for your project — a quick call, or written answers to a few questions? I'm flexible later this week.
+
+Best,
+Ashish</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== VAULT ===================== -->
+  <div class="panel" id="panel-vault">
+    <div class="section-head">
+      <h2>Reference vault</h2>
+      <span class="sub">Every ID, account tail, and amount from this week — tap to copy</span>
+    </div>
+    <div class="vault-grid" id="vault-grid"></div>
+  </div>
+
+
+</main>
+
+<footer>
+  Generated from a read-only sweep of connected Google Calendar and Gmail accounts. No calendar events, emails, or replies were sent automatically — every action above is yours to take.
+  <div class="progress-note" id="save-status"></div>
+</footer>
+
+<script id="app-state" type="application/json">{}</script>
+
+<script>
+  // ---- Persisted checklist state ----
+  // Captured BEFORE any dynamic rendering below, so this is always the
+  // pristine, unchanging template — publishing = this template with a
+  // fresh state blob swapped in, never a serialization of whatever the
+  // live DOM happens to look like mid-interaction.
+  const BASE_HTML = document.documentElement.outerHTML;
+
+  // STATE.punchlist: { [id]: { title, category, severity, links: [{label,href}], done } }
+  // Checking a box anywhere on the page ADDS its entry here (that's the
+  // punch list); it does not mark the source item "done" in place. The
+  // Punch List tab is rendered entirely from this object, and each entry
+  // there carries its own independent "done" checkbox.
+  let STATE = { punchlist: {} };
+  (function loadState() {
+    function valid(p) { return p && typeof p === "object" && p.punchlist && typeof p.punchlist === "object"; }
+    try {
+      const el = document.getElementById("app-state");
+      if (el && el.textContent.trim()) {
+        const parsed = JSON.parse(el.textContent);
+        if (valid(parsed)) { STATE = parsed; return; }
+      }
+    } catch (e) {}
+    try {
+      const ls = localStorage.getItem("ak-briefing-state");
+      if (ls) {
+        const parsed = JSON.parse(ls);
+        if (valid(parsed)) STATE = parsed;
+      }
+    } catch (e) {}
+  })();
+
+  let artifactNS;
+  let artifactChecked = false;
+  async function getArtifactNS() {
+    if (artifactChecked) return artifactNS;
+    artifactChecked = true;
+    try {
+      if (window.claude && window.claude.use) {
+        artifactNS = await window.claude.use("artifact");
+      } else {
+        artifactNS = null;
+      }
+    } catch (e) {
+      artifactNS = null;
+    }
+    return artifactNS;
+  }
+
+  let saveTimer = null;
+  function schedulePersist() {
+    const statusEl = document.getElementById("save-status");
+    if (statusEl) statusEl.textContent = "Saving…";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      const stateJson = JSON.stringify(STATE);
+      try { localStorage.setItem("ak-briefing-state", stateJson); } catch (e) {}
+      let html = BASE_HTML.replace(
+        /(<script id="app-state" type="application\/json">)[\s\S]*?(<\/script>)/,
+        (m, a, b) => a + stateJson + b
+      );
+      html = "<!doctype html>\n" + html;
+      try {
+        const ns = await getArtifactNS();
+        if (ns && ns.publish) {
+          await ns.publish(html);
+          return;
+        }
+      } catch (e) {}
+      if (statusEl) statusEl.textContent = "Saved on this device only — reconnect to sync across devices.";
+    }, 500);
+  }
+
+  // ---- Tabs ----
+  const tabs = document.querySelectorAll(".tab-btn");
+  const panels = {
+    actions: document.getElementById("panel-actions"),
+    calendar: document.getElementById("panel-calendar"),
+    punchlist: document.getElementById("panel-punchlist"),
+    drafts: document.getElementById("panel-drafts"),
+    vault: document.getElementById("panel-vault"),
+  };
+  function switchTab(name) {
+    if (!panels[name]) return;
+    tabs.forEach((b) => b.setAttribute("aria-selected", b.dataset.panel === name ? "true" : "false"));
+    Object.values(panels).forEach((p) => p.classList.remove("active"));
+    panels[name].classList.add("active");
+    panels[name].scrollIntoView({ block: "start", behavior: "instant" in Element.prototype ? "instant" : "auto" });
+  }
+  tabs.forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.panel));
+  });
+  document.addEventListener("click", (e) => {
+    const gt = e.target.closest(".goto-tab");
+    if (gt) switchTab(gt.dataset.gotoTab);
+    const st = e.target.closest("[data-scroll-to]");
+    if (st) {
+      const target = document.getElementById(st.dataset.scrollTo);
+      if (target) target.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+  });
+
+  // ---- Copy helper ----
+  function fallbackCopy(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      fallbackCopy(text);
+    }
+  }
+
+  function flashCopied(btn, label) {
+    const original = btn.textContent;
+    btn.textContent = "Copied ✓";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.classList.remove("copied");
+    }, 1400);
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".copy-btn");
+    if (!btn) return;
+    if (btn.dataset.copy) {
+      copyText(btn.dataset.copy);
+      flashCopied(btn);
+    } else if (btn.dataset.copyTarget) {
+      const el = document.getElementById(btn.dataset.copyTarget);
+      if (el) {
+        copyText(el.textContent);
+        flashCopied(btn);
+      }
+    } else if (btn.dataset.vaultValue) {
+      copyText(btn.dataset.vaultValue);
+      flashCopied(btn);
+    }
+  });
+
+  // ---- Suggested meetings (Google Calendar invite links) ----
+  // Times are UTC (EDT = UTC-4 in late Aug 2026), formatted for Google's
+  // calendar.google.com/calendar/render template so each button opens a
+  // pre-filled, one-click "add to calendar" invite — nothing is created
+  // until AK actually saves it on Google's own page.
+  const prepBlocks = [
+    { n: 1, icon: "💼", cat: "personal", mins: 30, time: "12:00–12:30 PM", title: "PREP: Northwestern Mutual Welcome Meeting (Aug 27)", forDesc: "Review onboarding materials, prep questions", date: "Aug 27", priority: "critical", start: "20260824T160000Z", end: "20260824T163000Z", details: "Preparing for: Northwestern Mutual Welcome Meeting\nEvent: Thu, Aug 27 @ 10:00 AM\n\nTasks:\n- Review onboarding materials\n- Prep questions" },
+    { n: 2, icon: "💼", cat: "personal", mins: 30, time: "12:30–1:00 PM", title: "PREP: MAP Meeting with Chad (Aug 25)", forDesc: "Review Nova/MAP agenda + prior notes", date: "Aug 25", priority: "critical", start: "20260824T163000Z", end: "20260824T170000Z", details: "Preparing for: MAP Meeting with Chad\nEvent: Tue, Aug 25 @ 3:30 PM\n\nTasks:\n- Review Nova/MAP agenda\n- Review prior notes" },
+    { n: 3, icon: "🧒", cat: "kids", mins: 30, time: "1:00–1:30 PM", title: "PREP: Curriculum Night – Ava (Aug 25)", forDesc: "Review Bolton curriculum, prep questions", date: "Aug 25", priority: "critical", start: "20260824T170000Z", end: "20260824T173000Z", details: "Preparing for: Curriculum Night – Ava\nEvent: Tue, Aug 25 @ 5:00 PM\n\nTasks:\n- Review Bolton curriculum materials\n- Prep questions for teachers" },
+    { n: 4, icon: "🧒", cat: "kids", mins: 30, time: "1:30–2:00 PM", title: "PREP: Back to School Night – Trinity (Sep 3)", forDesc: "Review materials for Maya's teachers", date: "Sep 3", priority: "critical", start: "20260824T173000Z", end: "20260824T180000Z", details: "Preparing for: Back to School Night – Trinity (Maya)\nEvent: Thu, Sep 3 @ 5:30 PM\n\nTasks:\n- Review Trinity materials\n- Prep questions for Maya's teachers" },
+    { n: 5, icon: "🎓", cat: "personal", mins: 60, time: "2:00–3:00 PM", title: "PREP: EMBA OAM 634 – Concept of Strategy (Aug 28)", forDesc: "Read Apple Inc. 2023 case + 2 articles", date: "Aug 28", priority: "high", start: "20260824T180000Z", end: "20260824T190000Z", details: "Preparing for: EMBA OAM 634 – Concept of Strategy\nEvent: Fri, Aug 28 @ 5:00 PM\n\nTasks:\n- Read Apple Inc. 2023 case\n- Read 2 assigned articles" },
+    { n: 6, icon: "🎓", cat: "personal", mins: 60, time: "3:00–4:00 PM", title: "PREP: EMBA ACT 512 – Session 1 (Aug 29)", forDesc: "Complete pre-session readings", date: "Aug 29", priority: "high", start: "20260824T190000Z", end: "20260824T200000Z", details: "Preparing for: EMBA ACT 512 – Session 1\nEvent: Sat, Aug 29 @ 9:00 AM\n\nTasks:\n- Complete pre-session readings" },
+    { n: 7, icon: "🎓", cat: "personal", mins: 30, time: "5:00–5:30 PM", title: "PREP: EMBA Add/Drop/Swap Deadline (Sep 2)", forDesc: "Confirm Fall schedule finalized", date: "Sep 2", priority: "critical", start: "20260824T210000Z", end: "20260824T213000Z", details: "Preparing for: EMBA Add/Drop/Swap closes – Fall\nEvent: Wed, Sep 2 @ 11:59 PM\n\nTasks:\n- Confirm Fall schedule is finalized" },
+  ];
+
+  function gcalLink(block) {
+    const base = "https://calendar.google.com/calendar/render?action=TEMPLATE";
+    const text = "&text=" + encodeURIComponent(block.title);
+    const dates = "&dates=" + block.start + "/" + block.end;
+    const details = "&details=" + encodeURIComponent(block.details);
+    const ctz = "&ctz=America/New_York";
+    return base + text + dates + details + ctz;
+  }
+
+  function fmtMins(m) {
+    return Math.floor(m / 60) + "h " + (m % 60) + "m";
+  }
+
+  function updatePrepTotals() {
+    let sel = 0;
+    document.querySelectorAll(".prep-select:checked").forEach((cb) => { sel += parseInt(cb.dataset.mins, 10) || 0; });
+    const note = document.getElementById("prep-selected-note");
+    if (note) note.textContent = "Selected for prep: " + fmtMins(sel) + " of 4h 30m";
+  }
+
+  const prepTbody = document.getElementById("prep-tbody");
+  prepBlocks.forEach((b) => {
+    const tr = document.createElement("tr");
+    const pid = "prep-" + b.n;
+    tr.innerHTML = `
+      <td class="chk-cell"><input type="checkbox" class="done-checkbox prep-select" data-mins="${b.mins}" data-pid="${pid}" title="Select — counts hours + adds to punch list"></td>
+      <td><span class="pill sev-${b.priority}">${b.priority === "critical" ? "Critical" : "High"}</span></td>
+      <td>${b.icon}</td>
+      <td class="mono">${b.n}</td>
+      <td class="mono">${b.time}</td>
+      <td>${b.title.replace(/^PREP: /, "")}</td>
+      <td>${b.forDesc}</td>
+      <td class="mono">${b.date}</td>
+      <td class="mono">${fmtMins(b.mins)}</td>
+      <td><a class="cal-btn" href="${gcalLink(b)}" target="_blank" rel="noopener">+ Add to calendar</a></td>
+    `;
+    const cb = tr.querySelector(".prep-select");
+    cb.checked = !!(STATE.punchlist && STATE.punchlist[pid]);
+    cb.addEventListener("change", () => {
+      if (cb.checked) {
+        STATE.punchlist[pid] = Object.assign({ title: b.title, category: b.cat, severity: b.priority, links: [{ label: "📅 Add to calendar ↗", href: gcalLink(b) }], done: false, addedAt: todayStr(), subs: [] }, STATE.punchlist[pid] || {});
+      } else {
+        delete STATE.punchlist[pid];
+      }
+      updatePrepTotals();
+      renderPunchList();
+      schedulePersist();
+    });
+    prepTbody.appendChild(tr);
+  });
+  updatePrepTotals();
+
+  // ---- Vault ----
+  const vaultItems = [
+    ["Litigation case no.", "24CV013887 — Viewpoint Residential v. Kama Real Estate", "24CV013887"],
+    ["Chase mortgage acct.", "…7429 — $24,213.75 due 9/1", "…7429"],
+    ["PayPal Credit acct.", "…9890 (Synchrony) — $71.00 min due", "…9890"],
+    ["Amex acct.", "…14006 — removed from Apple Pay", "…14006"],
+    ["Affirm card", "Visa …2738 — Dick's Sporting Goods $76.07", "…2738"],
+    ["EMBA course code", "FA26_OAM_634_2470 — Strategy (OAM 634)", "FA26_OAM_634_2470"],
+    ["Chase mortgage amount", "Due Sept 1, 2026", "$24,213.75"],
+    ["PayPal Credit min. due", "Was due 8/21 — now late", "$71.00"],
+    ["Affirm — Dick's", "Due Aug 25", "$76.07"],
+    ["Affirm — The Parking Spot", "Payment failed 8/20", "$26.88"],
+    ["Six Flags Gold Pass", "2027 season, sale ends 9/7", "$65"],
+    ["Costco Groupon deal", "1-yr membership + shop card", "$40 Costco Shop Card"],
+    ["Zep interview", "Paul Wood, Sr. PM — Tue Aug 25, 9:00 AM ET", "Tuesday, August 25, 2026, 9:00 AM ET"],
+    ["Drive week folder", "Weekly Planning / 2026-08-24", "https://drive.google.com/drive/folders/1pfh18iwMOfdlUd5CP8o-HKBuj5kk8KIK"],
+    ["Calendar_Summary.docx", "Full 14-day report", "https://drive.google.com/file/d/14hx4yYWqibK1Wzyre19sv46FvbohmtTA/view?usp=drivesdk"],
+    ["Prep_Meetings.ics", "7 prep blocks, Google Calendar invite format", "https://drive.google.com/file/d/1dlIw9ZzmMws70cGsamwUMv4Iv8thXwJI/view?usp=drivesdk"],
+  ];
+
+  const grid = document.getElementById("vault-grid");
+  vaultItems.forEach(([label, ctx, value]) => {
+    const row = document.createElement("div");
+    row.className = "vault-row";
+    row.innerHTML = `
+      <div class="vault-label">${label}<span class="ctx">${ctx}</span></div>
+      <div class="vault-value mono">${value}</div>
+      <button class="copy-btn" data-vault-value="${value.replace(/"/g, "&quot;")}">Copy</button>
+    `;
+    grid.appendChild(row);
+  });
+
+  // ---- Checkable items → Punch List ----
+  // Checking any item ADDS it to the 📋 Punch List (it does not mark it
+  // done). Items that appear in more than one place (a critical top action
+  // and its category twin) share a data-sync key — checking one checks all
+  // of them and creates a single punch entry. Each item also carries a
+  // status select (waiting / in their court / forwarded / reminder), a
+  // 🚩 priority toggle, and quick-capture buttons.
+  const usedIds = new Set();
+  const registry = {}; // id -> [{ cb, el }]
+  const ITEM_DATA = {}; // id -> { title, category, severity, links }
+  const ITEMS = []; // { id, category, severity, isEmail } — feeds the dashboard tiles
+
+  if (!STATE.status) STATE.status = {};
+  if (!STATE.priority) STATE.priority = {};
+
+  const CATEGORIES = [
+    { key: "personal", icon: "📧", label: "Personal emails" },
+    { key: "kids", icon: "🧒", label: "Kids" },
+    { key: "home", icon: "🏠", label: "Home" },
+    { key: "finance", icon: "💰", label: "Finance" },
+    { key: "health", icon: "🏥", label: "Health" },
+    { key: "lifestyle", icon: "🎡", label: "Lifestyle" },
+  ];
+
+  const STATUS_OPTS = [
+    ["", "— status"],
+    ["waiting", "⏳ Waiting on reply"],
+    ["court", "➡️ In their court"],
+    ["fwd", "📤 Forwarded"],
+    ["remind", "⏰ Reminder set"],
+  ];
+  const STATUS_LABEL = Object.fromEntries(STATUS_OPTS);
+
+  function slugify(s) {
+    return (s || "item").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) || "item";
+  }
+  function uniqueId(base) {
+    let id = base, n = 2;
+    while (usedIds.has(id)) { id = base + "-" + n; n++; }
+    usedIds.add(id);
+    return id;
+  }
+
+  function effectiveSeverity(id, natural) {
+    return STATE.priority[id] ? "critical" : natural;
+  }
+
+  function inferSeverity(el) {
+    for (const s of ["critical", "high", "medium", "low"]) {
+      if (el.classList.contains("sev-" + s)) return s;
+      if (el.querySelector(".pill.sev-" + s)) return s;
+    }
+    return "low";
+  }
+
+  function inferCategory(el, title) {
+    if (el.dataset.cat) return el.dataset.cat;
+    const t = (title || "").toLowerCase();
+    if (/ashton|maya|ava|kid|classdojo|tutor|fingerprint|curriculum|trinity/.test(t)) return "kids";
+    if (/mortgage|paypal|amazon|affirm|chase|amex|legalzoom|credit karma|truist|edfinancial|child support/.test(t)) return "finance";
+    if (/dental|spine|health|workout/.test(t)) return "health";
+    if (/six flags|aquarium|costco|lego/.test(t)) return "lifestyle";
+    if (/hoa|ogp|hvac|household|property tax|peachtree|zillow/.test(t)) return "home";
+    return "personal";
+  }
+
+  function collectLinks(el) {
+    const anchors = el.querySelectorAll("a.mail-link, a.file-link, a.cal-btn");
+    const links = [];
+    anchors.forEach((a) => {
+      if (links.length >= 4) return;
+      const label = a.textContent.trim() || "Open";
+      links.push({ label, href: a.href });
+    });
+    return links;
+  }
+
+  function reminderLink(title) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const p = (n) => String(n).padStart(2, "0");
+    const day = "" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
+    return "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" +
+      encodeURIComponent("Reminder: " + title) +
+      "&dates=" + day + "T090000/" + day + "T091500" +
+      "&details=" + encodeURIComponent("Reminder from the AK Weekly Briefing.") +
+      "&ctz=America/New_York";
+  }
+
+  function buildQuickActions(container, titleOverride, id) {
+    const title = titleOverride || "Item";
+    const linkEl = container.querySelector(".mail-link, .file-link, .cal-btn");
+    const href = linkEl ? linkEl.href : "";
+    const tsEl = container.querySelector(".ts");
+    const ts = tsEl ? tsEl.textContent.trim() : "";
+
+    const wrap = document.createElement("span");
+    wrap.className = "qa-group";
+
+    const calA = document.createElement("a");
+    calA.className = "qa-btn";
+    calA.title = "Add a draft event to Google Calendar";
+    calA.target = "_blank";
+    calA.rel = "noopener";
+    const details = `${title}${ts ? "\nWhen: " + ts : ""}${href ? "\nReference: " + href : ""}\n\nFrom the AK Weekly Briefing.`;
+    calA.href = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(title) + "&details=" + encodeURIComponent(details);
+    calA.textContent = "📅";
+    wrap.appendChild(calA);
+
+    const remA = document.createElement("a");
+    remA.className = "qa-btn";
+    remA.title = "Set a reminder (tomorrow 9 AM, pre-filled Google Calendar event)";
+    remA.target = "_blank";
+    remA.rel = "noopener";
+    remA.href = reminderLink(title);
+    remA.textContent = "⏰";
+    wrap.appendChild(remA);
+
+    const taskBtn = document.createElement("button");
+    taskBtn.className = "qa-btn";
+    taskBtn.type = "button";
+    taskBtn.title = "Copy as a task (paste into Google Tasks, Evernote, Reminders, Todoist…)";
+    taskBtn.textContent = "🗒️";
+    taskBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const text = `${title}${ts ? "\nWhen: " + ts : ""}${href ? "\nReference: " + href : ""}`;
+      copyText(text);
+      const orig = taskBtn.textContent;
+      taskBtn.textContent = "✓";
+      taskBtn.classList.add("copied");
+      setTimeout(() => { taskBtn.textContent = orig; taskBtn.classList.remove("copied"); }, 1400);
+    });
+    wrap.appendChild(taskBtn);
+
+    const flagBtn = document.createElement("button");
+    flagBtn.className = "qa-btn flag-btn";
+    flagBtn.type = "button";
+    flagBtn.title = "Toggle priority (force Critical on/off)";
+    flagBtn.textContent = "🚩";
+    if (STATE.priority[id]) flagBtn.classList.add("flag-on");
+    flagBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      STATE.priority[id] = !STATE.priority[id];
+      if (!STATE.priority[id]) delete STATE.priority[id];
+      (registry[id] || []).forEach((r) => {
+        const fb = r.el.querySelector(".flag-btn");
+        if (fb) fb.classList.toggle("flag-on", !!STATE.priority[id]);
+      });
+      if (STATE.punchlist[id]) {
+        STATE.punchlist[id].severity = effectiveSeverity(id, ITEM_DATA[id] ? ITEM_DATA[id].severity : "low");
+      }
+      const item = ITEMS.find((it) => it.id === id);
+      if (item) item.severity = effectiveSeverity(id, item.natural);
+      renderPunchList();
+      renderDashboard();
+      schedulePersist();
+    });
+    wrap.appendChild(flagBtn);
+
+    const sel = document.createElement("select");
+    sel.className = "status-sel";
+    sel.title = "Task status";
+    STATUS_OPTS.forEach(([v, l]) => {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = l;
+      sel.appendChild(o);
+    });
+    sel.value = STATE.status[id] || "";
+    sel.addEventListener("change", () => {
+      if (sel.value) STATE.status[id] = sel.value; else delete STATE.status[id];
+      (registry[id] || []).forEach((r) => {
+        const other = r.el.querySelector(".status-sel");
+        if (other && other !== sel) other.value = sel.value;
+      });
+      renderPunchList();
+      schedulePersist();
+    });
+    wrap.appendChild(sel);
+
+    return wrap;
+  }
+
+  function todayStr() {
+    return new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  function escHtml(t) {
+    return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function addToPunchlist(id) {
+    const d = ITEM_DATA[id] || { title: id, category: "personal", severity: "low", links: [] };
+    const prev = STATE.punchlist[id] || {};
+    STATE.punchlist[id] = {
+      title: prev.title || d.title,
+      category: d.category,
+      severity: effectiveSeverity(id, d.severity),
+      links: d.links,
+      done: prev.done || false,
+      doneAt: prev.doneAt || null,
+      addedAt: prev.addedAt || todayStr(),
+      subs: prev.subs || [],
+    };
+  }
+
+  function onSourceToggle(id, checked) {
+    if (checked) {
+      addToPunchlist(id);
+    } else {
+      delete STATE.punchlist[id];
+    }
+    (registry[id] || []).forEach((r) => {
+      r.cb.checked = checked;
+      r.el.classList.toggle("is-queued", checked);
+    });
+    updateProgress();
+    renderPunchList();
+    schedulePersist();
+  }
+
+  function injectCheckables() {
+    const candidates = document.querySelectorAll("main .card, main tbody tr, main .cat-row");
+    const tablesSeen = new Set();
+
+    candidates.forEach((el) => {
+      const linkEl = el.querySelector(".mail-link, .file-link, .cal-btn");
+      if (!linkEl) return;
+      if (el.closest(".no-check")) return; // weekly grid, prep table & logistics handle themselves
+      if (el.dataset.checkId) return;
+
+      const isRow = el.tagName === "TR";
+      const isCatRow = el.classList.contains("cat-row");
+      let title;
+      if (isRow) {
+        const c0 = el.cells[0] ? el.cells[0].textContent.trim() : "";
+        const c1 = el.cells[1] ? el.cells[1].textContent.trim() : "";
+        title = [c0, c1].filter(Boolean).join(" — ") || "Item";
+      } else if (isCatRow) {
+        const t = el.querySelector(".cat-title");
+        title = (t ? t.textContent : el.textContent.slice(0, 60)).trim();
+      } else {
+        const t = el.querySelector(".card-title");
+        title = (t ? t.textContent : el.textContent.slice(0, 60)).trim().replace(/^\d+\s*·\s*/, "");
+      }
+
+      const sync = el.dataset.sync;
+      const id = sync ? "sync-" + sync : uniqueId("chk-" + slugify(title));
+      el.dataset.checkId = id;
+      const firstOfGroup = !registry[id];
+
+      const category = inferCategory(el, title);
+      const natural = inferSeverity(el);
+      if (firstOfGroup) {
+        ITEM_DATA[id] = { title, category, severity: natural, links: collectLinks(el) };
+        const links = ITEM_DATA[id].links;
+        ITEMS.push({ id, category, natural, severity: effectiveSeverity(id, natural), isEmail: !!(links[0] && links[0].href.indexOf("mail.google.com") !== -1) });
+      }
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "done-checkbox";
+      cb.title = "Add to punch list";
+      cb.checked = !!STATE.punchlist[id];
+      cb.addEventListener("change", () => onSourceToggle(id, cb.checked));
+      if (!registry[id]) registry[id] = [];
+      registry[id].push({ cb, el });
+
+      const qa = buildQuickActions(el, title, id);
+
+      if (isRow) {
+        const table = el.closest("table");
+        if (table && !tablesSeen.has(table)) {
+          tablesSeen.add(table);
+          const headRow = table.querySelector("thead tr");
+          if (headRow) {
+            headRow.insertBefore(document.createElement("th"), headRow.firstChild);
+            const thQa = document.createElement("th");
+            thQa.textContent = "Task";
+            headRow.appendChild(thQa);
+          }
+        }
+        const tdChk = document.createElement("td");
+        tdChk.className = "chk-cell";
+        tdChk.appendChild(cb);
+        el.insertBefore(tdChk, el.firstChild);
+        const tdQa = document.createElement("td");
+        tdQa.appendChild(qa);
+        el.appendChild(tdQa);
+      } else if (isCatRow) {
+        const label2 = document.createElement("label");
+        label2.className = "chk-wrap";
+        label2.appendChild(cb);
+        el.insertBefore(label2, el.firstChild);
+        const main = el.querySelector(".cat-main");
+        if (main) main.appendChild(qa); else el.appendChild(qa);
+      } else {
+        const label2 = document.createElement("label");
+        label2.className = "chk-wrap";
+        label2.appendChild(cb);
+        const top = el.querySelector(".card-top");
+        if (top) top.insertBefore(label2, top.firstChild);
+        el.appendChild(qa);
+      }
+
+      if (STATE.punchlist[id]) el.classList.add("is-queued");
+    });
+
+    updateProgress();
+  }
+
+  function updateProgress() {
+    const total = Object.keys(STATE.punchlist).length;
+    const el = document.getElementById("progress-count");
+    if (el) el.innerHTML = total + '<span class="of">on list</span>';
+    const tabCount = document.getElementById("punch-tab-count");
+    if (tabCount) tabCount.textContent = total;
+  }
+
+  // ---- Punch List rendering ----
+  function pillHtml(sev) {
+    const label = sev.charAt(0).toUpperCase() + sev.slice(1);
+    return `<span class="pill sev-${sev} sev-tag">${label}</span>`;
+  }
+
+  function punchRowHtml(id, e) {
+    const linksHtml = (e.links || []).map((l) => `<a class="mail-link" href="${l.href}" target="_blank" rel="noopener">${l.label}</a>`).join(" ");
+    const status = STATE.status[id];
+    const statusHtml = status ? `<span class="status-badge">${STATUS_LABEL[status] || status}</span>` : "";
+    const addedHtml = e.addedAt ? `<span class="added-date">added ${e.addedAt}</span>` : "";
+    const doneHtml = e.done && e.doneAt ? `<span class="done-date">✓ completed ${e.doneAt}</span>` : "";
+    const subs = e.subs || [];
+    const subsDone = subs.filter((x) => x.done).length;
+    const subCountHtml = subs.length ? `<span class="sub-count">${subsDone}/${subs.length} steps</span>` : "";
+    const subsHtml = subs.map((x, i) => `
+        <div class="sub-row">
+          <input type="checkbox" class="sub-done" data-id="${id}" data-idx="${i}" ${x.done ? "checked" : ""}>
+          <span class="sub-text ${x.done ? "sub-text-done" : ""}">${escHtml(x.t)}</span>
+          <button type="button" class="sub-del" data-id="${id}" data-idx="${i}" title="Delete step">×</button>
+        </div>`).join("");
+    return `
+      <div class="punch-row ${e.done ? "is-done" : ""}" data-id="${id}">
+        <input type="checkbox" class="punch-done" ${e.done ? "checked" : ""} data-id="${id}" title="Mark completed">
+        <div class="punch-main">
+          <div class="punch-title" data-id="${id}"><span class="punch-title-text">${escHtml(e.title)}</span>${pillHtml(e.severity)}${statusHtml}${subCountHtml}${addedHtml}${doneHtml}</div>
+          <div class="punch-links">${linksHtml}</div>
+          <div class="punch-subs">
+            ${subsHtml}
+            <div class="sub-add-row">
+              <input type="text" class="sub-input" data-id="${id}" placeholder="Add a step / sub-action…">
+              <button type="button" class="sub-add" data-id="${id}" title="Add step">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="punch-ctrl">
+          <button type="button" class="qa-btn punch-edit" data-id="${id}" title="Edit item text">✏️</button>
+          <button type="button" class="qa-btn punch-research" data-id="${id}" title="Copy a ready-made research prompt for this task">🔍</button>
+          <button type="button" class="punch-remove" data-id="${id}" title="Remove from punch list">✕</button>
+        </div>
+      </div>`;
+  }
+
+  function punchGroupHtml(labelHtml, items) {
+    const doneCount = items.filter(([, e]) => e.done).length;
+    const rows = items.map(([id, e]) => punchRowHtml(id, e)).join("");
+    return `<div class="cat-block punch-group"><div class="cat-block-head">${labelHtml}<span class="cat-count">${doneCount}/${items.length} done</span></div>${rows}</div>`;
+  }
+
+  function renderPunchList() {
+    const root = document.getElementById("punchlist-root");
+    if (!root) return;
+    const entries = Object.entries(STATE.punchlist || {});
+
+    const totalEl = document.getElementById("punch-total-count");
+    const doneEl = document.getElementById("punch-done-count");
+    if (totalEl) totalEl.textContent = entries.length;
+    if (doneEl) doneEl.textContent = entries.filter(([, e]) => e.done).length;
+
+    // Masthead counters track the punch list
+    const critEl = document.getElementById("stat-critical");
+    const highEl = document.getElementById("stat-high");
+    if (critEl) critEl.textContent = entries.filter(([, e]) => e.severity === "critical" && !e.done).length;
+    if (highEl) highEl.textContent = entries.filter(([, e]) => e.severity === "high" && !e.done).length;
+
+    if (!entries.length) {
+      root.innerHTML = '<p class="note" style="padding:24px 0;">Nothing on your punch list yet. Check any box on the Actions &amp; Inbox or Calendar tabs to add it here. Critical and High counts in the top bar track this list.</p>';
+      return;
+    }
+
+    let html = "";
+    const critical = entries.filter(([, e]) => e.severity === "critical");
+    if (critical.length) {
+      html += punchGroupHtml('<span class="icon">🔴</span><h3>Critical</h3>', critical);
+    }
+    CATEGORIES.forEach((c) => {
+      const items = entries.filter(([, e]) => e.category === c.key && e.severity !== "critical");
+      if (items.length) {
+        html += punchGroupHtml(`<span class="icon">${c.icon}</span><h3>${c.label}</h3>`, items);
+      }
+    });
+    root.innerHTML = html;
+  }
+
+  function removeFromPunchlist(id) {
+    delete STATE.punchlist[id];
+    (registry[id] || []).forEach((r) => {
+      r.cb.checked = false;
+      r.el.classList.remove("is-queued");
+    });
+    const prepCb = document.querySelector('.prep-select[data-pid="' + id + '"]');
+    if (prepCb) { prepCb.checked = false; updatePrepTotals(); }
+    updateProgress();
+    renderPunchList();
+    schedulePersist();
+  }
+
+  document.addEventListener("change", (e) => {
+    const sdn = e.target.closest(".sub-done");
+    if (sdn) {
+      const en = STATE.punchlist[sdn.dataset.id];
+      if (en && en.subs && en.subs[sdn.dataset.idx]) {
+        en.subs[sdn.dataset.idx].done = sdn.checked;
+        renderPunchList();
+        schedulePersist();
+      }
+      return;
+    }
+    const pd = e.target.closest(".punch-done");
+    if (pd) {
+      const id = pd.dataset.id;
+      if (STATE.punchlist[id]) {
+        STATE.punchlist[id].done = pd.checked;
+        STATE.punchlist[id].doneAt = pd.checked
+          ? new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+          : null;
+        renderPunchList();
+        schedulePersist();
+      }
+    }
+  });
+  function addSubStep(id) {
+    const inp = document.querySelector('.sub-input[data-id="' + id + '"]');
+    if (!inp || !inp.value.trim() || !STATE.punchlist[id]) return;
+    if (!STATE.punchlist[id].subs) STATE.punchlist[id].subs = [];
+    STATE.punchlist[id].subs.push({ t: inp.value.trim(), done: false });
+    renderPunchList();
+    schedulePersist();
+    const again = document.querySelector('.sub-input[data-id="' + id + '"]');
+    if (again) again.focus();
+  }
+
+  function researchPrompt(id) {
+    const e = STATE.punchlist[id];
+    if (!e) return "";
+    const cat = (CATEGORIES.find((c) => c.key === e.category) || {}).label || e.category;
+    const status = STATE.status[id] ? (STATUS_LABEL[STATE.status[id]] || STATE.status[id]) : "none set";
+    const subs = (e.subs || []).map((x) => "- [" + (x.done ? "done" : "open") + "] " + x.t).join("\n") || "(none yet)";
+    const links = (e.links || []).map((l) => "- " + l.label.replace(/[↗️✉📅🧭]/g, "").trim() + ": " + l.href).join("\n") || "(none)";
+    return "Research request: " + e.title + "\n\n" +
+      "Context:\n- Category: " + cat + "\n- Priority: " + e.severity + "\n- Status: " + status + "\n- Added to my punch list: " + (e.addedAt || "recently") + "\n\n" +
+      "Steps tracked so far:\n" + subs + "\n\n" +
+      "References:\n" + links + "\n\n" +
+      "Please research this and come back with: (1) the current state of things and any deadlines I should know, (2) my realistic options with tradeoffs, (3) the single recommended next action, and (4) a draft of any email, message, or call script I would need to take that action.";
+  }
+
+  document.addEventListener("click", (e) => {
+    const rm = e.target.closest(".punch-remove");
+    if (rm) { removeFromPunchlist(rm.dataset.id); return; }
+
+    const sd = e.target.closest(".sub-del");
+    if (sd) {
+      const en = STATE.punchlist[sd.dataset.id];
+      if (en && en.subs) { en.subs.splice(parseInt(sd.dataset.idx, 10), 1); renderPunchList(); schedulePersist(); }
+      return;
+    }
+
+    const sa = e.target.closest(".sub-add");
+    if (sa) { addSubStep(sa.dataset.id); return; }
+
+    const rs = e.target.closest(".punch-research");
+    if (rs) {
+      copyText(researchPrompt(rs.dataset.id));
+      const orig = rs.textContent;
+      rs.textContent = "✓";
+      rs.classList.add("copied");
+      setTimeout(() => { rs.textContent = orig; rs.classList.remove("copied"); }, 1400);
+      return;
+    }
+
+    const ed = e.target.closest(".punch-edit");
+    if (ed) {
+      const id = ed.dataset.id;
+      const en = STATE.punchlist[id];
+      const titleEl = document.querySelector('.punch-title[data-id="' + id + '"] .punch-title-text');
+      if (!en || !titleEl || titleEl.querySelector("input")) return;
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = "title-edit-input";
+      inp.value = en.title;
+      titleEl.textContent = "";
+      titleEl.appendChild(inp);
+      inp.focus();
+      inp.select();
+      const save = () => {
+        if (inp.value.trim()) en.title = inp.value.trim();
+        renderPunchList();
+        schedulePersist();
+      };
+      inp.addEventListener("keydown", (k) => {
+        if (k.key === "Enter") save();
+        if (k.key === "Escape") renderPunchList();
+      });
+      inp.addEventListener("blur", save);
+      return;
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.classList && e.target.classList.contains("sub-input")) {
+      addSubStep(e.target.dataset.id);
+    }
+  });
+
+  injectCheckables();
+  renderPunchList();
+
+  // ---- Daily refresh + "NEW today" marking ----
+  // The page itself cannot reach Gmail/Calendar (static artifact, no API
+  // access) — the refresh button copies a standing prompt; pasting it into
+  // a Claude chat re-sweeps the last 24h and republishes this page with
+  // the punch list preserved. Items whose shown date matches TODAY get a
+  // NEW badge automatically on every load, so daily republishes surface
+  // what changed without any extra markup.
+  const REFRESH_PROMPT = "Daily refresh of my AK Weekly Briefing artifact " +
+    "(https://claude.ai/code/artifact/23e675c0-361d-418c-9f1f-f93e353feacc):\n" +
+    "1. Re-sweep Gmail (last 24h, ashishkohli@gmail.com) and all Google Calendars (next 14 days) read-only, per my Weekly_Briefing_Master_Prompt in Drive/Weekly Planning.\n" +
+    "2. Merge new/changed items into the existing page; update the weekly grids, top actions, dashboard counts, and drafts for any new critical unanswered email.\n" +
+    "3. PRESERVE the punch list and all saved state (entries, sub-steps, statuses, priority flags, dates) — never reset it.\n" +
+    "4. Update the 'Data as of' stamp to now, and republish to the SAME artifact URL.";
+
+  const refreshBtn = document.getElementById("refresh-btn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      copyText(REFRESH_PROMPT);
+      refreshBtn.classList.add("copied");
+      refreshBtn.textContent = "✓ Prompt copied — paste into Claude";
+      setTimeout(() => {
+        refreshBtn.classList.remove("copied");
+        refreshBtn.textContent = "🔄 Refresh data";
+      }, 3000);
+    });
+  }
+
+  function markNewToday() {
+    const now = new Date();
+    const short = now.toLocaleDateString("en-US", { month: "short", day: "numeric" }); // "Aug 26"
+    const dayShort = now.toLocaleDateString("en-US", { weekday: "short" }) + " " + short; // "Wed Aug 26"
+    let count = 0;
+    document.querySelectorAll("#panel-actions .cat-row, #panel-actions .card").forEach((el) => {
+      if (el.querySelector(".new-badge")) return;
+      const meta = el.querySelector(".cat-meta, .msg-meta");
+      const txt = meta ? meta.textContent : "";
+      if (txt.includes(short) && (txt.includes("Received") || txt.includes(dayShort) || txt.includes(short + ",") || txt.includes(short + " "))) {
+        const t = el.querySelector(".cat-title, .card-title");
+        if (t && (txt.includes(dayShort) || new RegExp("(Received|arrived|added)[^·]*" + short).test(txt))) {
+          const b = document.createElement("span");
+          b.className = "new-badge";
+          b.textContent = "NEW";
+          t.appendChild(b);
+          count++;
+        }
+      }
+    });
+    const note = document.getElementById("new-today-note");
+    if (note) note.textContent = count ? ("🆕 " + count + " new today · ") : "";
+  }
+  markNewToday();
+
+  // ---- Dashboard tiles (emails + tasks per category) ----
+  const DASH_META = [
+    { key: "critical", icon: "🔴", name: "Critical", scroll: "top-actions" },
+    { key: "home", icon: "🏠", name: "Home", scroll: "band-home", color: "var(--cat-home)" },
+    { key: "finance", icon: "💰", name: "Finance", scroll: "band-finance", color: "var(--cat-finance)" },
+    { key: "health", icon: "🏥", name: "Health", scroll: "band-health", color: "var(--cat-health)" },
+    { key: "kids", icon: "🧒", name: "Kids", scroll: "band-kids", color: "var(--cat-kids)" },
+    { key: "lifestyle", icon: "🎡", name: "Lifestyle", scroll: "band-lifestyle", color: "var(--cat-lifestyle)" },
+    { key: "personal", icon: "📧", name: "Personal & Career", scroll: "band-personal", color: "var(--cat-personal)" },
+  ];
+  function renderDashboard() {
+    const wrap = document.getElementById("dash-tiles");
+    if (!wrap) return;
+    let html = "";
+    DASH_META.forEach((m) => {
+      let items;
+      if (m.key === "critical") {
+        items = ITEMS.filter((it) => it.severity === "critical");
+      } else {
+        items = ITEMS.filter((it) => it.category === m.key);
+      }
+      const emails = items.filter((it) => it.isEmail).length;
+      const tasks = items.length - emails;
+      const style = m.color ? ` style="border-top-color:${m.color}"` : "";
+      html += `<button type="button" class="dash-tile ${m.key === "critical" ? "dt-critical" : ""}" data-scroll-to="${m.scroll}"${style}>
+        <div class="dt-icon">${m.icon}</div>
+        <div class="dt-name">${m.name}</div>
+        <div class="dt-counts">${emails} emails · ${tasks} tasks</div>
+      </button>`;
+    });
+    wrap.innerHTML = html;
+    const tabCount = document.getElementById("inbox-tab-count");
+    if (tabCount) tabCount.textContent = ITEMS.length;
+  }
+  renderDashboard();
+
+  // ---- Countdown ----
+  const target = new Date("2026-09-01T00:00:00-04:00").getTime();
+  function updateCountdown() {
+    const now = Date.now();
+    const diff = target - now;
+    const el = document.getElementById("countdown");
+    if (diff <= 0) { el.textContent = "Today"; return; }
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    el.textContent = days + "d " + hours + "h";
+  }
+  updateCountdown();
+  setInterval(updateCountdown, 60000);
+</script>
+
+</html>
